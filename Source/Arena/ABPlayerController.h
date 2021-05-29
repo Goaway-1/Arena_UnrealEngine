@@ -17,4 +17,7 @@ class ARENA_API AABPlayerController : public APlayerController
 public:
 	virtual void PostInitializeComponents() override;
 	virtual void OnPossess(APawn* APawn) override;
+
+protected:
+	virtual void BeginPlay() override;
 };

@@ -2,12 +2,13 @@
 
 
 #include "ABGameMode.h"
-#include "ABPawn.h"			//내가 참조할것
+//#include "ABPawn.h"			//내가 참조할것
+#include "ABCharacter.h"
 #include "ABPlayerController.h"
 
 AABGameMode::AABGameMode()
 {
-	DefaultPawnClass = AABPawn::StaticClass();	//ABPawn의 클래스 정보를 저장 (멀티 플레이를 고려, 만들어두는 것이 아님)
+	DefaultPawnClass = AABCharacter::StaticClass();	//ABPawn의 클래스 정보를 저장 (멀티 플레이를 고려, 만들어두는 것이 아님)
 
 	PlayerControllerClass = AABPlayerController::StaticClass();
 }

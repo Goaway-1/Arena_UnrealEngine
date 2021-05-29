@@ -118,7 +118,7 @@
       </details>
 
 - ### 로그의 출력 방법
-   - <img src="Image/Set_Log.png" height="200" title="Set_Log">
+   - <img src="Image/Set_Log.png" height="300" title="Set_Log">
    - 게임 모듈에 로그를 추가하고 다른 모듈에서 끌어다 쓴다.
    - 그렇기에 다른 모듈(cpp)에는 항상 게임 모듈을 넣어둔다.
 
@@ -162,7 +162,7 @@
 
 
 - ### GameMode & Pawn & PlayerController 설정
-   - <img src="Image/GameMode_set.png" height="200" title="GameMode_set"> 
+   - <img src="Image/GameMode_set.png" height="300" title="GameMode_set"> 
    - ABGameMode, ABPawn, ABPlayerController을 생성하고 ABGameMode를 월드세팅에 GameMode에 넣어 룰을 지정한다.
    - ABPawn을 ABGameMode의 Default Pawn으로 지정한다. ABPlayerController또한 마찬가지 이다. (이때 생성이 아닌 클래스의 정보를 저장하는 것)
       <details><summary>코드 보기</summary>
@@ -190,7 +190,7 @@
       </details>
 
 - ### 플레이어의 입장
-   - <img src="Image/Player_Login.png" height="200" title="Player_Login"> 
+   - <img src="Image/Player_Login.png" height="300" title="Player_Login"> 
    - 플레이어가 로그인(입장)하면 언리얼 엔진에서 PostLogin 이벤트 함수가 호출된다. 
       - 이 과정에서 플레이어가 조종한 폰을 생성하고 플레이어 컨트롤러가 해당 폰에 빙의하는 작업이 이루어진다.
    - 각 생성되는 시점은 PostInitializeComponents, 빙의를 진행하는 시점은 PalyerController의 Posses, Pawn의 PossesedBy로 알 수 있다.
@@ -240,17 +240,231 @@
 - 로그는 게임모듈명에서 선언하고 다른 모듈들이 이 헤더를 참조하게 만든다.
 - 액터의 이벤트 함수 : BeginPlay, Tick, EndPlay, PostInitalizeComponents ->액터의 셋팅이 
 - 게임플레이를 도와주는 프레임워크 시스템 사용 (멀티플레이, 장르...)
-- <img src="Image/Mode_Set.png" height="200" title="Mode_Set">
+- <img src="Image/Mode_Set.png" height="300" title="Mode_Set">
 
    - 폰의 타입, 시작 레벨을 지정한다.  
 
-- <img src="Image/Player_login.jpg" height="200" title=" Player_login">
+- <img src="Image/Player_login.jpg" height="300" title=" Player_login">
 
    - GameMode, PlayerController, Pawn의 입장 순서를 나타낸다.
 
 ## **05.29**
 > **<h3>Today Dev Story</h3>**
-   - null
+
+- ### 폰의 제작
+   - <img src="Image/Create_Pawn.png" height="300" title="Create_Pawn"> 
+   - Pawn에는 Capsule(충돌), SkeletalMesh(위치&애니메이션), FloatingPawnMovement(이동), SpringArm(카메라 구도), Camera(카메라)로 구성
+   - Gamemode에 의해 생성, Camera는 Spring의 하위 컴포넌트
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABPawn.h
+      #include "GameFramework/FloatingPawnMovement.h"
+      ...
+      UPROPERTY(VisibleAnywhere, Category=Collision)
+      UCapsuleComponent* Capsule;
+
+      UPROPERTY(VisibleAnywhere, Category=Visual)
+      USkeletalMeshComponent * Mesh;
+
+      UPROPERTY(VisibleAnywhere, Category=Movement)
+      UFloatingPawnMovement *Movement;
+
+      UPROPERTY(VisibleAnywhere, Category=Camera)
+      USpringArmComponent* SpringArm;
+
+      UPROPERTY(VisibleAnywhere, Category=Camera)
+      UCameraComponent* Camera;
+
+      //ABPawn.cpp
+      Capsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("CAPSULE"));
+      Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MESH"));
+      Movement = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("MOVEMENT"));
+      SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SPRINGARM"));
+      Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+
+      RootComponent = Capsule;
+      Mesh->SetupAttachment(Capsule);
+      SpringArm->SetupAttachment(Capsule);
+      Camera->SetupAttachment(SpringArm);
+
+      Capsule->SetCapsuleHalfHeight(88.0f);
+      Capsule->SetCapsuleRadius(34.0f);
+      Mesh->SetRelativeLocationAndRotation(FVector(0.0f,0.0f,-88.0f),FRotator(0.0f,-90.0f,0.0f));
+      SpringArm->TargetArmLength = 400.0f;
+      SpringArm->SetRelativeRotation(FRotator(-15.0f,0.0f,0.0f));
+
+      static ConstructorHelpers::FObjectFinder<USkeletalMesh>
+      SK_CARDBOARD(TEXT("/Game/InfinityBladeWarriors/Character/CompleteCharacters/SK_CharM_Cardboard.SK_CharM_Cardboard"));
+
+      if(SK_CARDBOARD.Succeeded())
+      {
+         Mesh->SetSkeletalMesh(SK_CARDBOARD.Object);
+      }
+      ```
+
+      </details>
+
+- ### 폰의 조작
+   - <img src="Image/Input_Set.png" height="300" title="Input_Set">
+   - <img src="Image/Pawn_Move.gif" height="300" title="Pawn_Move">
+   - Pawn의 이동을 위해 InputComponent라는 언리얼 컴포넌트 제공. 폰의 멤버 함수와 입력 설정을 연결하면 입력 신호는 자동으로 전달
+   - 그것이 바로 SetupInputComponent 함수. BindAxis, BindAction을 제공
+   - 위의 사진처럼 UpDown, LeftRight 매핑을 추가로 구현하고 AddMovementInput함수를 통해 이동
+   - ABPlayerController의 BeginPlay()에 inputmode를 설정하여 자동으로 포커싱
+   - #### Character와-동일한-구현
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABPawn.h -> 함수 추가
+      private:
+      void UpDown(float NewAxisValue);
+      void LeftRight(float NewAxisValue);
+
+      //ABPawn.cpp
+      void AABPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+      {
+         Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+         PlayerInputComponent->BindAxis(TEXT("UpDown"), this, &AABPawn::UpDown);          //설정한 키값을 누르면 UpDown을 실행
+         PlayerInputComponent->BindAxis(TEXT("LeftRight"), this, &AABPawn::LeftRight);
+      }
+
+      void AABPawn::LeftRight(float NewAxisValue)  //움직임
+      {
+         AddMovementInput(GetActorForwardVector(), NewAxisValue); //GetActorForwardVector->월드 방향 기준으로 전진 방향
+      }
+
+      void AABPawn::UpDown(float NewAxisValue)
+      {
+         AddMovementInput(GetActorRightVector(), NewAxisValue);
+      }
+
+      //ABPlayerController.cpp -> 화면을 클릭하여 포커스를 잡지 않아도 자동으로 잡아줌
+      void AABPlayerController::BeginPlay()
+      {
+         Super::BeginPlay();
+
+         FInputModeGameOnly InputMode;
+         SetInputMode(InputMode);
+      }
+      ```
+
+      </details>
+   
+- ### 폰의 애니메이션 설정
+
+   1. 코드로 애니메이션 구현
+      - <img src="Image/Pawn_Animation.gif" height="300" title="Pawn_Animation">
+      - 코드로 애니메이션을 지정할때 게임의 규모가 커지면 애니메이션 재생에 관리적인 한계에 부딪힌다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABPawn.cpp
+         void AABPawn::BeginPlay()
+         {
+            Super::BeginPlay();
+
+            //애니메이션을 호출
+            Mesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+            UAnimationAsset *AnimAsset = LoadObject<UAnimationAsset>(nullptr, TEXT("/Game/Book/Animations/WarriorRun.WarriorRun"));
+
+            if(AnimAsset != nullptr)
+            {
+               Mesh->PlayAnimation(AnimAsset, true);
+            }
+         }
+         ```
+
+         </details>
+
+   2. 애니메이션 블루프린트로 애니메이션 구현
+      - <img src="Image/Ani_BluePrint.png" height="300" title="Ani_BluePrint"><img src="Image/Animation_BluePrint.png" height="300" title="Animation_BluePrint">
+      - 애니메이션은 코드 구현하기 복잡해서 애니메이션 블루프린트를 사용한다. (실행화면은 코드 구현과 동일)
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //애니메이션을 호출
+         Mesh->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+         static ConstructorHelpers::FClassFinder<UAnimInstance>
+         WARRIOR_ANIM(TEXT("/Game/Book/Animations/WarriorAnimBlueprint.WarriorAnimBlueprint_C"));
+         
+         if(WARRIOR_ANIM.Succeeded())
+         {
+            Mesh->SetAnimInstanceClass(WARRIOR_ANIM.Class);
+         }
+         ```
+
+         </details>
+
+- ### 캐릭터 모델
+   - 인간형 Pawn이 아닌 효과적으로 제작하기 위한 Character를 생성 (Pawn을 상속받은 형태)
+   - FloatingPawnMovement가 아닌 CharacterMovement를 사용하여 구현에 있어 더욱 효과적이다. ex) 멀티 동기화, 중력, 다양한 움직임
+   - 코드는 Pawn과 동일하며 Mesh, capsule, movement는 기본제공하여 따로 구현할 필요가 없고 Get을 사용하여 호출한다. 아래와 같다.
+   - ABGameMode에서 기본 Pawn으로 ABPawn을 사용하지 않고 ABCharacter로 변경해준다.
+      ```c++
+      //ABCharater.cpp
+      GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+      //ABGameMode.ccp
+      #include "ABCharacter.h"
+      
+      DefaultPawnClass = AABCharacter::StaticClass();
+      ```
+   - [Pawn의 코드](#Character와-동일한-구현)
+
+- ### 컨트롤 회전의 활용
+   - <img src="Image/Turn_Camera.gif" height="300" title="Turn_Camera">
+   - Character에서 제어하며, 입력의 Turn(Z축), LookUp(Y축)축 설정을 가져와 사용한다. (-3 ~ 3)
+   - AddControllerInputYaw, Roll, Pitch라는 3가지 명령어로 제공한다.
+   - 틸드(~) 키를 사용하여 콘솔 창에 "displayall PlayerController ControlRotattion"을 입력하면 실시간으로 회전 값을 볼 수 있다.
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacter.cpp
+      PlayerInputComponent->BindAxis(TEXT("Turn"),this,&AABCharacter::Turn);
+	   PlayerInputComponent->BindAxis(TEXT("LookUp"),this,&AABCharacter::LookUp);
+      ...
+      ...
+      void AABCharacter::Turn(float NewAxisValue)
+      {
+         AddControllerYawInput(NewAxisValue);
+      }
+
+      void AABCharacter::LookUp(float NewAxisValue)
+      {
+         AddControllerPitchInput(NewAxisValue);
+      }
+      ```
+
+      </details>
 
 > **<h3>Realization</h3>**
-   - null
+
+   - PlayerController에서는 인터페이스 기능도 다룬다.
+      - 움직임을 컨트롤하지만 구현은 Pawn이나 Character에 되어있다.
+   - 애니메이션은 코드가 아닌 블루프린트로 사용하는게 효과적
+   - Pawn < Character 효과적 (FloatingPawnMovement가 아닌 CharacterMovement를 사용한다.)
+      - 이는 멀티플레이시 자동으로 동기화를 지원하며 중력도 지원한다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacter.cpp
+      PlayerInputComponent->BindAxis(TEXT("Turn"),this,&AABCharacter::Turn);
+	   PlayerInputComponent->BindAxis(TEXT("LookUp"),this,&AABCharacter::LookUp);
+      ...
+      ...
+      void AABCharacter::Turn(float NewAxisValue)
+      {
+         AddControllerYawInput(NewAxisValue);
+      }
+
+      void AABCharacter::LookUp(float NewAxisValue)
+      {
+         AddControllerPitchInput(NewAxisValue);
+      }
+      ```
+
+      </details>
