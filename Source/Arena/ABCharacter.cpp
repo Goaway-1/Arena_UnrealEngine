@@ -2,6 +2,7 @@
 
 
 #include "ABCharacter.h"
+#include "ABAnimInstance.h"
 
 // Sets default values
 AABCharacter::AABCharacter()
@@ -17,10 +18,6 @@ AABCharacter::AABCharacter()
 	
 	GetMesh()->SetRelativeLocationAndRotation(FVector(0.0f,0.0f,-88.0f),FRotator(0.0f,-90.0f,0.0f));
 	GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
-	
-	SpringArm->TargetArmLength = 400.0f;
-	SpringArm->SetRelativeRotation(FRotator(-15.0f,0.0f,0.0f));
-	
 
 	//모델 호출
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh>
@@ -39,13 +36,19 @@ AABCharacter::AABCharacter()
 	{
 		GetMesh()->SetAnimInstanceClass(WARRIOR_ANIM.Class);
 	}
+
+	//스피링 암을 활요한 삼인칭 조작
+	SetControlMode(EControlMode::DIABLO);
+	
+	ArmLengthSpeed = 3.0f;
+	ArmRotationSpeed = 10.0f;
+	GetCharacterMovement()->JumpZVelocity = 800.0f;
 }
 
 // Called when the game starts or when spawned
 void AABCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
 
 // Called every frame
@@ -53,34 +56,137 @@ void AABCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, ArmLengthTo, DeltaTime, ArmLengthSpeed);
+
+	switch (CurrentControlMode)
+	{
+	case EControlMode::DIABLO:
+		SpringArm->SetRelativeRotation(FMath::RInterpTo(SpringArm->GetTargetRotation(), ArmRotationTo, DeltaTime, ArmRotationSpeed));
+		if(DirectionToMove.SizeSquared() > 0.0f)
+		{
+			GetController()->SetControlRotation(FRotationMatrix::MakeFromX(DirectionToMove).Rotator());
+			AddMovementInput(DirectionToMove);
+		}
+		break;
+	}
 }
 
 // Called to bind functionality to input
 void AABCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	PlayerInputComponent->BindAction(TEXT("ViewChange"), EInputEvent::IE_Pressed, this, &AABCharacter::ViewChange);
+	PlayerInputComponent->BindAction(TEXT("Jump"),EInputEvent::IE_Pressed, this, &ACharacter::Jump);
+	PlayerInputComponent->BindAction(TEXT("Attack"),EInputEvent::IE_Pressed, this, &AABCharacter::Attack);
+	
 	PlayerInputComponent->BindAxis(TEXT("UpDown"), this, &AABCharacter::UpDown);
 	PlayerInputComponent->BindAxis(TEXT("LeftRight"), this, &AABCharacter::LeftRight);
 	PlayerInputComponent->BindAxis(TEXT("Turn"),this,&AABCharacter::Turn);
 	PlayerInputComponent->BindAxis(TEXT("LookUp"),this,&AABCharacter::LookUp);
 }
 
-void AABCharacter::LeftRight(float NewAxisValue)
-{
-	AddMovementInput(GetActorRightVector(), NewAxisValue);
-}
-
 void AABCharacter::UpDown(float NewAxisValue)
 {
-	AddMovementInput(GetActorForwardVector(), NewAxisValue);
+	switch (CurrentControlMode)
+	{
+	case EControlMode::GTA:
+		AddMovementInput(FRotationMatrix(FRotator(0.0f,GetControlRotation().Yaw, 0.0f)).GetUnitAxis(EAxis::X),NewAxisValue);
+		break;
+	case EControlMode::DIABLO:
+		DirectionToMove.X = NewAxisValue;
+		break;
+	}
 }
 
-void AABCharacter::Turn(float NewAxisValue)
+void AABCharacter::LeftRight(float NewAxisValue)
 {
-	AddControllerYawInput(NewAxisValue);
+	switch (CurrentControlMode)
+	{
+	case EControlMode::GTA:
+		AddMovementInput(FRotationMatrix(FRotator(0.0f,GetControlRotation().Yaw, 0.0f)).GetUnitAxis(EAxis::Y),NewAxisValue);
+		break;
+	case EControlMode::DIABLO:
+		DirectionToMove.Y = NewAxisValue;
+		break;
+	}
 }
 
 void AABCharacter::LookUp(float NewAxisValue)
 {
-	AddControllerPitchInput(NewAxisValue);
+	switch (CurrentControlMode)
+	{
+	case EControlMode::GTA:
+		AddControllerPitchInput(NewAxisValue);
+		break;
+	}
 }
+
+void AABCharacter::Turn(float NewAxisValue)
+{
+	switch (CurrentControlMode)
+	{
+	case EControlMode::GTA:
+		AddControllerYawInput(NewAxisValue);
+		break;
+	}
+}
+
+void AABCharacter::SetControlMode(EControlMode NewControlMode)
+{
+	CurrentControlMode = NewControlMode;
+	switch (CurrentControlMode)
+	{
+	case EControlMode::GTA:
+		ArmLengthTo = 450.0f;
+		SpringArm->bUsePawnControlRotation = true;
+		SpringArm->bInheritPitch = true;
+		SpringArm->bInheritRoll = true;
+		SpringArm->bInheritYaw = true;
+		SpringArm->bDoCollisionTest = true;
+		bUseControllerRotationYaw = false;
+		GetCharacterMovement()->bOrientRotationToMovement = true;	//캐릭터 회전 여부
+		GetCharacterMovement()->bUseControllerDesiredRotation = false;	//끄면 부드럽게?
+		GetCharacterMovement()->RotationRate = FRotator(0.0f,720.0f,0.0f); //회전 속도
+		break;
+	case EControlMode::DIABLO:
+		ArmLengthTo = 800.0f;
+		ArmRotationTo = FRotator(-45.0f,0.0f,0.0f);
+		SpringArm->bUsePawnControlRotation = false;
+		SpringArm->bInheritPitch = false;
+		SpringArm->bInheritRoll = false;
+		SpringArm->bInheritYaw = false;
+		SpringArm->bDoCollisionTest = false;
+		bUseControllerRotationYaw = false;
+		GetCharacterMovement()->bOrientRotationToMovement = false;	//캐릭터 회전 여부
+		GetCharacterMovement()->bUseControllerDesiredRotation = true;	//끄면 부드럽게?
+		GetCharacterMovement()->RotationRate = FRotator(0.0f,720.0f,0.0f); //회전 속도
+		break;
+	}
+}
+
+void AABCharacter::ViewChange()
+{
+	switch (CurrentControlMode)
+	{
+	case EControlMode::GTA:
+		GetController()->SetControlRotation(GetActorRotation());
+		SetControlMode(EControlMode::DIABLO);
+		break;
+	case EControlMode::DIABLO:
+		GetController()->SetControlRotation(SpringArm->GetRelativeRotation());
+		SetControlMode(EControlMode::GTA);
+		break;
+	}
+}
+
+void AABCharacter::Attack()
+{
+	ABLOG_S(Warning);
+
+	auto AnimInstance = Cast<UABAnimInstance>(GetMesh()->GetAnimInstance());
+	if(nullptr == AnimInstance) return;
+
+	AnimInstance->PlayAttackMontage();
+}
+

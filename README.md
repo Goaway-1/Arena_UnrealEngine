@@ -417,7 +417,8 @@
 - ### 컨트롤 회전의 활용
    - <img src="Image/Turn_Camera.gif" height="300" title="Turn_Camera">
    - Character에서 제어하며, 입력의 Turn(Z축), LookUp(Y축)축 설정을 가져와 사용한다. (-3 ~ 3)
-   - AddControllerInputYaw, Roll, Pitch라는 3가지 명령어로 제공한다.
+   - AddControllerInputYaw, Roll, Pitch라는 3가지 명령어로 제공한다. 이때 카메라와 폰의 회전이 연동되어 폰의 Rotation 값도 변경된다.
+      - Pawn섹션에 있는 UseControllRotationYaw를 사용하면 해제할 수 있다.
    - 틸드(~) 키를 사용하여 콘솔 창에 "displayall PlayerController ControlRotattion"을 입력하면 실시간으로 회전 값을 볼 수 있다.
       <details><summary>코드 보기</summary>
 
@@ -448,23 +449,430 @@
    - Pawn < Character 효과적 (FloatingPawnMovement가 아닌 CharacterMovement를 사용한다.)
       - 이는 멀티플레이시 자동으로 동기화를 지원하며 중력도 지원한다.
 
+## **05.30**
+
+> **<h3>Today Dev Story</h3>**
+
+- ### 삼인칭 컨트롤 구현(GTA 방식)
+   - <img src="Image/SpringArm_Camera.gif" height="300" title="SpringArm_Camera">
+   - SpringArm 컴포넌트를 사용하여 편리하게 구현이 가능하다.
+   - 이전 방식과는 다르게 시점을 이동해도 캐릭터가 이동하지 않는다. (bUseControllerRotationYaw값 설정)
+   - 상하좌우로 시점이 변경되고, 카메라 사이에 장애물이 감지되면 캐릭터가 보이도록 한다.
+
       <details><summary>코드 보기</summary>
 
       ```c++
+      //ABCharacter.h
+      void SetControlMode(int32 ControlMode); //protected
+      
       //ABCharacter.cpp
-      PlayerInputComponent->BindAxis(TEXT("Turn"),this,&AABCharacter::Turn);
-	   PlayerInputComponent->BindAxis(TEXT("LookUp"),this,&AABCharacter::LookUp);
-      ...
-      ...
-      void AABCharacter::Turn(float NewAxisValue)
-      {
-         AddControllerYawInput(NewAxisValue);
+      //스피링 암을 활요한 삼인칭 조작
+      AABCharacter::AABCharacter()
+      { 
+         ...
+	      SetControlMode(0);
       }
 
-      void AABCharacter::LookUp(float NewAxisValue)
+      void AABCharacter::SetControlMode(int32 ControlMode)
       {
-         AddControllerPitchInput(NewAxisValue);
+         if(ControlMode == 0)
+         {
+            SpringArm->TargetArmLength = 450.0f;
+            SpringArm->SetRelativeRotation(FRotator::ZeroRotator);
+            SpringArm->bUsePawnControlRotation = true;
+            SpringArm->bInheritPitch = true;
+            SpringArm->bInheritRoll = true;
+            SpringArm->bInheritYaw = true;
+            SpringArm->bDoCollisionTest = true;
+            bUseControllerRotationYaw = false;
+         }
       }
       ```
 
       </details>
+
+   - <img src="Image/Camera_Follow_Pawn.gif" height="300" title="Camera_Follow_Pawn">
+   - 카메라의 방향으로 직진할 수 있도록 구현. (Rotaion값으로 Vector데이터를 얻어 사용)
+   - OrientRotationToMovement 기능을 사용하여 SetControlMode에서 캐릭터의 회전을 구현한다. (회전, 속도)
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacter.cpp
+      void AABCharacter::UpDown(float NewAxisValue)
+      {
+         //AddMovementInput(GetActorForwardVector(), NewAxisValue); 이전방식
+         AddMovementInput(FRotationMatrix(GetControlRotation()).GetUnitAxis(EAxis::X),NewAxisValue);
+      }
+
+      void AABCharacter::LeftRight(float NewAxisValue)
+      {
+         //AddMovementInput(GetActorRightVector(), NewAxisValue);    -> 카메라와 상관 없음
+         AddMovementInput(FRotationMatrix(GetControlRotation()).GetUnitAxis(EAxis::Y),NewAxisValue);	//카메라의 방향대로 사용
+      }
+      //캐릭터의 회전
+      void AABCharacter::SetControlMode(int32 ControlMode)
+      {
+         if(ControlMode == 0)
+         {
+            ...
+            GetCharacterMovement()->bOrientRotationToMovement = true;	//캐릭터 회전 여부
+		      GetCharacterMovement()->RotationRate = FRotator(0.0f,720.0f,0.0f); //회전 속돟
+         }
+      }
+      ```
+
+      </details>
+
+- ### 삼인칭 컨트롤 구현 (디아블로 방식)
+   - 입력모드를 구분하도록 클래스 새로운 연거형을 선언, 현재 입력 모드를 보관할 멤버 변수를 추가했다. (각축의 입력을 보관한 벡터 추가)
+      - <img src="Image/GTA_Type.gif" height="300" title="GTA_Type">
+         
+         - GTA방식 : 상하 키와 좌우 키를 각각처리
+      - <img src="Image/DIABLO_Type.gif" height="300" title="DIABLO_Type">
+         
+         - 디아블로방식 : 상하좌우를 조합하여 회전과 이동을 처리
+   - SetControlMode의 Switch로 인자 값을 분리해 구별하고 각 카메라와 플레이어 이동에서 변경한다.
+   - 캐릭터의 자연스러운 전환을 위해서 CharcherMovement의 UseControllerDesiredRotation 속성을 체크한다. (Diablo만 GTA는 다른 방식)
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharater.h
+      enum class EControlMode { GTA, DIABLO };
+
+      void SetControlMode(EControlMode NewControlMode);
+
+      EControlMode CurrentControlMode = EControlMode::GTA;
+      FVector DirectionToMove = FVector::ZeroVector;
+      
+      //ABCharacter.cpp
+      void AABCharacter::Tick(float DeltaTime)
+      {
+         Super::Tick(DeltaTime);
+
+         switch (CurrentControlMode)
+         {
+         case EControlMode::DIABLO:
+            if(DirectionToMove.SizeSquared() > 0.0f)
+            {
+               GetController()->SetControlRotation(FRotationMatrix::MakeFromX(DirectionToMove).Rotator());
+               AddMovementInput(DirectionToMove);
+            }
+            break;
+         }
+      }
+      ...
+      void AABCharacter::UpDown(float NewAxisValue)
+      {
+         switch (CurrentControlMode)
+         {
+         case EControlMode::GTA:
+            AddMovementInput(FRotationMatrix(FRotator(0.0f,GetControlRotation().Yaw, 0.0f)).GetUnitAxis(EAxis::X),NewAxisValue);
+            break;
+         case EControlMode::DIABLO:
+            DirectionToMove.X = NewAxisValue;
+            break;
+         }
+      }  
+      ...
+      void AABCharacter::LookUp(float NewAxisValue)
+      {
+         switch (CurrentControlMode)
+         {
+         case EControlMode::GTA:
+            AddControllerPitchInput(NewAxisValue);
+            break;
+         }
+      }
+      ...
+      void AABCharacter::SetControlMode(EControlMode NewControlMode)
+      {
+         CurrentControlMode = NewControlMode;
+         switch (CurrentControlMode)
+         {
+         case EControlMode::GTA:
+            ...
+            GetCharacterMovement()->bOrientRotationToMovement = true;	//캐릭터 회전 여부
+            GetCharacterMovement()->bUseControllerDesiredRotation = false;	//끄면 부드럽게?
+            GetCharacterMovement()->RotationRate = FRotator(0.0f,720.0f,0.0f); //회전 속도
+            break;
+         case EControlMode::DIABLO:
+            ...
+            GetCharacterMovement()->bOrientRotationToMovement = false;	//캐릭터 회전 여부
+            GetCharacterMovement()->bUseControllerDesiredRotation = true;	//끄면 부드럽게?
+            GetCharacterMovement()->RotationRate = FRotator(0.0f,720.0f,0.0f); //회전 속도
+            break;
+         }
+      }
+      ```
+
+      </details>
+
+- ### 컨트롤 설정의 변경
+   - <img src="Image/View_Switch.gif" height="300" title="View_Switch">
+   - 특정 키(Shift + V)를 입력해서 앞의 두가지 조작 방식을 전환할 수 있도록 구현
+      - FMath 클래스에서 제공하는 InterpTo(일정한 속도로 지정 목표까지 이동)를 사용하여 자연스럽게 변경
+   - 프로젝트 셋팅의 입력에서 ViewChange를 제작
+   - SetControlMode에서 SpringArm의 길이와 회전을 Tick에서 변경하고 ViewChange에서 모드이름과 ControlRotation을 변환한다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacter.h
+      //자연스러운 이동을 위한 변수들
+      protected:
+         float ArmLengthTo = 0.0f;
+         FRotator ArmRotationTo = FRotator::ZeroRotator;
+         float ArmLengthSpeed = 0.0f;
+         float ArmRotationSpeed = 0.0f;
+
+      private:
+         void ViewChange();
+
+      //ABCharater.cpp
+      AABCharacter::AABCharacter() {
+         ...
+      	ArmLengthSpeed = 3.0f;
+         ArmRotationSpeed = 10.0f;
+      }
+
+      void AABCharacter::SetControlMode(EControlMode NewControlMode) {
+	      CurrentControlMode = NewControlMode;
+         switch (CurrentControlMode)
+         {
+         case EControlMode::GTA:
+            ArmLengthTo = 450.0f;
+            ...
+         case EControlMode::DIABLO:
+            ArmLengthTo = 800.0f;
+            ArmRotationTo = FRotator(-45.0f,0.0f,0.0f);
+         }
+      }
+
+      void AABCharacter::Tick(float DeltaTime)
+      {
+         Super::Tick(DeltaTime);
+
+         SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, ArmLengthTo, DeltaTime, ArmLengthSpeed);
+
+         switch (CurrentControlMode)
+         {
+         case EControlMode::DIABLO:
+            SpringArm->SetRelativeRotation(FMath::RInterpTo(SpringArm->GetTargetRotation(), ArmRotationTo, DeltaTime, ArmRotationSpeed));
+            if(DirectionToMove.SizeSquared() > 0.0f)
+            {
+               GetController()->SetControlRotation(FRotationMatrix::MakeFromX(DirectionToMove).Rotator());
+               AddMovementInput(DirectionToMove);
+            }
+            break;
+         }
+      }
+
+      void AABCharacter::ViewChange()
+      {
+         switch (CurrentControlMode)
+         {
+         case EControlMode::GTA:
+            GetController()->SetControlRotation(GetActorRotation()); //카메라 회전
+            SetControlMode(EControlMode::DIABLO);
+            break;
+         case EControlMode::DIABLO:
+            GetController()->SetControlRotation(SpringArm->GetRelativeRotation());  
+            SetControlMode(EControlMode::GTA);
+            break;
+         }
+      }
+      ```
+
+      </details>
+
+- ### 애니메이션 블루프린트
+   - <img src="Image/Anim_Instance.gif" height="300" title="Anim_Instance">
+   - c++로 애님 인스턴스를 제작하여 Pawn의 속력을 저장하고 이 값에 따라 애님 그래프에서 애니메이션을 구분.
+   - ABAnimInstance.cpp 생성 후 CurrentPawnSpeed라는 float 변수 추가 후 참조 가능하도록 설정
+   - <img src="Image/Set_BluePrint.gif" height="300" title="Set_BluePrint">
+      - 블루프린트의 클래스 세팅>디테일>부모 클래스를 ABAnimInstance로 변경, 위 그림과 같이 구조 형성
+   - 애님 인스턴스에서 Pawn의 속도 정보를 가져와 CurrentPawnSpeed에 업데이트한다.
+   - 애님 인스턴스는 NativeUpdateAnimation 함수가 틱마다 호출된다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABAnimInstance.h
+      public:
+         UABAnimInstance();
+         virtual void NativeUpdateAnimation(float DeltaSeconds) override;  //매 틱마다 불러온다.
+
+      private:
+         UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Pawn, Meta=(AllowPrivateAccess=true))
+         float CurrentPawnSpeed; //속도
+         
+      //ABAnimInstance.cpp
+      UABAnimInstance::UABAnimInstance()
+      {
+         CurrentPawnSpeed = 0.0f;
+      }
+
+      void UABAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
+      {
+         Super::NativeUpdateAnimation(DeltaSeconds);
+
+         auto Pawn = TryGetPawnOwner();	//유효검사
+         if(::IsValid(Pawn))
+         {
+            CurrentPawnSpeed = Pawn->GetVelocity().Size();	//속도를 얻어온다.
+         }
+      }
+      ```
+
+      </details>
+
+- ### 스테이트 머신 제작
+   - <img src="Image/State_Machine.png" height="300" title="State_Machine">
+   - 애님 그래프는 반복 수행을 설계하는 기능을 갖는 스테이트 머신 기능을 제공한다.
+   - 위 사진과 같이 AnimGraph에 있던 애니메이션을 BaseAction의 Ground(스테이트)로 옮겼다.
+   - 2번의 Entry 노드와 연결된 것을 시작 스테이트라고 하며, 이외의 연결은 조건을 통해 연결된다.
+
+- ### 점프 구현_1
+   - <img src="Image/Jump_Ani.gif" height="300" title="Jump_Ani">
+   - ACharater 클래스에는 Jump라는 멤버 함수가 있으며, 바인딩이 가능하다.
+   - 높이의 조절을 원하는 경우 GetCharacterMovement로 가져와서 JumpZVelcity 값을 변경한다. (※기본 420)
+   - 점프의 경우 속도가 포함되기 때문에 달리기 모션이 재생된다. 이를 블루프린트에서 구현한다.
+   - 폰의 점프 상황을 보관하기 위해 IsInAir라는 boolean타입을 선언하고 IsFalling함수를 호출해 동기화한다.
+   - <img src="Image/Jump_Ani.png" height="300" title="Jump_Ani">
+      
+      - Ground <-> Jump의 트랜지션 조건을 위와 같이  설정한다.
+      - 아직 Jump 내부는 구현하지 않았다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //점프만.
+      //ABCharacter.cpp
+      GetCharacterMovement()->JumpZVelocity = 800.0f;
+      ...
+      void AABCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+      {
+         Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+         //내가 제작한 함수를 사용(뷰변경)
+         PlayerInputComponent->BindAction(TEXT("ViewChange"), EInputEvent::IE_Pressed, this, &AABCharacter::ViewChange);
+         //엔진에서 제공하는 함수를 사용(점프)
+         PlayerInputComponent->BindAction(TEXT("Jump"),EInputEvent::IE_Pressed, this, &ACharacter::Jump);
+         ...
+      }
+      //점프 애니메이션
+      //ABAnimInstance.h
+      UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Pawn, Meta=(AllowPrivateAccess=true))
+	   bool IsInAir;
+
+      //ABAnimInstance.cpp
+      void UABAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
+      {
+         Super::NativeUpdateAnimation(DeltaSeconds);
+
+         auto Pawn = TryGetPawnOwner();	//유효검사
+         if(::IsValid(Pawn))
+         {
+            CurrentPawnSpeed = Pawn->GetVelocity().Size();	//속도를 얻어온다.
+            auto Character = Cast<ACharacter>(Pawn);  //캐릭터를 찾아
+            if(Character)
+            {
+               IsInAir = Character->GetMovementComponent()->IsFalling();
+            }
+         }
+      }
+      ```
+
+      </details>
+
+- ### 애니메이션 리타겟
+   - <img src="Image/Retarget.png" height="300" title="Retarget">
+   - 내가 가지고 있는 캐릭터에는 점프 애니메이션이 존재하지 않기 다른 스켈레톤의 애니메이션을 가져와야한다.
+   - 각 타겟(2가지)의 스켈레톤을 리타깃(매핑)하면 서로 애니메이션을 교환할 수 있다.
+
+- ### 점프 구현_2
+   - <img src="Image/Jump_Ani_2.gif" height="300" title="Jump_Ani_2">
+   - 점프 동작은 지형에 따라 체공 시간이 달라 지형을 고려하여 "도약(1번), 체공(무한), 착지(1번)"로 나뉜다.
+   - 애니메이션의 종료시 다른 애니메이션으로의 전환을 쉽게 하려면 트랜지션 노드에서 제공하는 'Automatic Rule Based on Sequen Player in State'를 체크하면된다.
+
+- ### 애니메이션 몽타주 (공격 모션)
+   - <img src="Image/Montage.gif" height="300" title="Montage">
+   - 연속된 모션으로 공격하도록 애니메이션 기능 구현하기 위해 몽타주라는 기능을 사용한다.
+   - 애님 몽타주 에셋을 제작하여 섹션을 단위로 애니메이션을 관리한다.
+   - 위의 사진은 Attack1이라는 섹션으로 저장되며 세션 이름을 사용해 이를 재생할 수 있다.
+   - <img src="Image/Attack_Log.gif" height="300" title="Attack_Log">
+   - 이전과 동일한 방식으로 키의 입력을 받아 로그를 띄우고 ABCharacter에서 ABAnimInstance.h를 추가해 PlayAttackMontage를 실행한다.
+   - 몽타주을 계속 체크하여 폰에게 알려주는 방식
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABAnimInstance.h
+      public:
+      	void PlayAttackMontage();
+      private:
+      	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category=Attack, Meta=(AllowPrivateAccess=true))
+         UAnimMontage* AttackMontage;
+      //ABAnimInstance.cpp
+      static ConstructorHelpers::FObjectFinder<UAnimMontage>
+      ATTACK_MONTAGE(TEXT("/Game/Book/Animations/SK_Mannequin_Skeleton_Montage.SK_Mannequin_Skeleton_Montage"));
+      
+      if(ATTACK_MONTAGE.Succeeded())
+      {
+         AttackMontage = ATTACK_MONTAGE.Object;
+      }
+
+      void UABAnimInstance::PlayAttackMontage()
+      {
+         if(!Montage_IsPlaying(AttackMontage))
+         {
+            Montage_Play(AttackMontage, 1.0f);
+         }
+      }
+      //ABCharacter.cpp
+      #include "ABAnimInstance.h" //헤더 추가 후
+      void AABCharacter::Attack()
+      {
+         ABLOG_S(Warning);
+
+         auto AnimInstance = Cast<UABAnimInstance>(GetMesh()->GetAnimInstance());
+         if(nullptr == AnimInstance) return;
+
+         AnimInstance->PlayAttackMontage();
+      }
+      ```
+
+      </details>
+
+- ### 델리게이트 
+   - 몽타주의 재생이 끝나면 재공격 가능 여부를 알려주는 방식이 더 효과적이다. 이 방식이 바로 델리게이트이다.
+   - 특정 객체가 해야 할 로직을 다른 객체가 처리할 수 있도록 하는 설계이다. 하지만 c++에서는 지원하지 않기에 별도로 구축한 프레임워크를 사용한다.
+      - AnimInstance에서는 몽타주가 끝나면 OnMontageEnded 델리게이트를 제공한다.
+
+
+> **<h3>Realization</h3>**
+
+- 애니메이션 블루프린트는 아래와 같은 시스템이 있다.
+   1. 애님 인스턴스 : Pawn의 정보를 받아 애님 그래프가 참조할 데이터를 제공. c++과 블루프린트로 제작 가능
+   2. 애님 테이블 : 변수 값에 따라 변화하는 애니메이션 시스템을 설계. 블루프린트로만 제작가능
+- 틱마다 입력 시스템 -> 게임 로직 -> 애니메이션 시스템순으로 실행한다.
+- 현재의 움직임을 파악하기 위해서 4가지 함수가 사용된다. (FloatingPawnMovement에서는 false를 반환)
+   - IsFalling(), IsSwimming(), IsCrouching(), IsMoveOnGround()이다.
+- 스테이트 머신을 사용하여 애니메이션을 구현하는데 계속 추가한다면 복잡하기에 몽타주라는 기능을 사용한다.
+- 델리게이트를 c++에서는 지원하지 않아 엔진에서 제공하는 별도의 델리게이트 프레임워크를 사용해야한다. 
+   - AnimInstance의 OnMontageEnded라는 델리게이트이다.
+
+|기술|특징|방식|
+|:--:|:--:|:--:|
+|몽타주|특정 상황에서 애니메이션 발동하며 스테이트를 추가하지 않아도 된다. |몽타주를 계속 체크하는 방식|
+|델리게이트|특정 객체가 해야할 것을 다른 객체가 처리한다. |몽타주가 종료되면 체크|
+
+
+
+## **05.31**
+
+> **<h3>Today Dev Story</h3>**
+   - null
+
+> **<h3>Realization</h3>**
+   - null
