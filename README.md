@@ -3,10 +3,7 @@
 ## **05.28**
 
 > **<h3>Today Dev Story</h3>**
-
-- ### Rider을 사용하여 자동 완성기능을 구현 (기존 제공은 느리다.)
-
-- ### 고정된 분수대의 구현
+- ### <span style = "color:yellow;">고정된 분수대의 구현</span>
    - <img src="Image/Fountain.gif" height="300" title="Fountain"> <img src="Image/Asset_Auto_Set.gif" height="300" title="Asset_Auto_Set">
    - 3개의 컴포넌트(스태딕 메시, 라이트, 파티클)을 할당하여 구현
    - 에셋의 경로를 컴포넌트로 바로 지정하여 생성가능하게 구현
@@ -66,7 +63,7 @@
 
       </details>
 
-- ### 움직이는 액터 설계
+- ### <span style = "color:yellow;">움직이는 액터 설계</span>
    - <img src="Image/Fountain_Rotate.gif" height="300" title="  Fountain_Rotate">
    1. 매크로를 사용하여 구현
       - Tick에서 구현하고 DeltaTime을 사용한다.
@@ -117,7 +114,7 @@
 
       </details>
 
-- ### 로그의 출력 방법
+- ### <span style = "color:yellow;">로그의 출력 방법</span>
    - <img src="Image/Set_Log.png" height="300" title="Set_Log">
    - 게임 모듈에 로그를 추가하고 다른 모듈에서 끌어다 쓴다.
    - 그렇기에 다른 모듈(cpp)에는 항상 게임 모듈을 넣어둔다.
@@ -161,7 +158,7 @@
       </details>
 
 
-- ### GameMode & Pawn & PlayerController 설정
+- ### <span style = "color:yellow;">GameMode & Pawn & PlayerController 설정</span>
    - <img src="Image/GameMode_set.png" height="300" title="GameMode_set"> 
    - ABGameMode, ABPawn, ABPlayerController을 생성하고 ABGameMode를 월드세팅에 GameMode에 넣어 룰을 지정한다.
    - ABPawn을 ABGameMode의 Default Pawn으로 지정한다. ABPlayerController또한 마찬가지 이다. (이때 생성이 아닌 클래스의 정보를 저장하는 것)
@@ -189,7 +186,7 @@
 
       </details>
 
-- ### 플레이어의 입장
+- ### <span style = "color:yellow;">플레이어의 입장</span>
    - <img src="Image/Player_Login.png" height="300" title="Player_Login"> 
    - 플레이어가 로그인(입장)하면 언리얼 엔진에서 PostLogin 이벤트 함수가 호출된다. 
       - 이 과정에서 플레이어가 조종한 폰을 생성하고 플레이어 컨트롤러가 해당 폰에 빙의하는 작업이 이루어진다.
@@ -251,7 +248,7 @@
 ## **05.29**
 > **<h3>Today Dev Story</h3>**
 
-- ### 폰의 제작
+- ### <span style = "color:yellow;">폰의 제작</span>
    - <img src="Image/Create_Pawn.png" height="300" title="Create_Pawn"> 
    - Pawn에는 Capsule(충돌), SkeletalMesh(위치&애니메이션), FloatingPawnMovement(이동), SpringArm(카메라 구도), Camera(카메라)로 구성
    - Gamemode에 의해 생성, Camera는 Spring의 하위 컴포넌트
@@ -305,7 +302,7 @@
 
       </details>
 
-- ### 폰의 조작
+- ### <span style = "color:yellow;">폰의 조작</span>
    - <img src="Image/Input_Set.png" height="300" title="Input_Set">
    - <img src="Image/Pawn_Move.gif" height="300" title="Pawn_Move">
    - Pawn의 이동을 위해 InputComponent라는 언리얼 컴포넌트 제공. 폰의 멤버 함수와 입력 설정을 연결하면 입력 신호는 자동으로 전달
@@ -352,7 +349,7 @@
 
       </details>
    
-- ### 폰의 애니메이션 설정
+- ### <span style = "color:yellow;">폰의 애니메이션 설정</span>
 
    1. 코드로 애니메이션 구현
       - <img src="Image/Pawn_Animation.gif" height="300" title="Pawn_Animation">
@@ -399,7 +396,7 @@
 
          </details>
 
-- ### 캐릭터 모델
+- ### <span style = "color:yellow;">캐릭터 모델</span>
    - 인간형 Pawn이 아닌 효과적으로 제작하기 위한 Character를 생성 (Pawn을 상속받은 형태)
    - FloatingPawnMovement가 아닌 CharacterMovement를 사용하여 구현에 있어 더욱 효과적이다. ex) 멀티 동기화, 중력, 다양한 움직임
    - 코드는 Pawn과 동일하며 Mesh, capsule, movement는 기본제공하여 따로 구현할 필요가 없고 Get을 사용하여 호출한다. 아래와 같다.
@@ -414,7 +411,7 @@
       ```
    - [Pawn의 코드](#Character와-동일한-구현)
 
-- ### 컨트롤 회전의 활용
+- ### <span style = "color:yellow;">컨트롤 회전의 활용</span>
    - <img src="Image/Turn_Camera.gif" height="300" title="Turn_Camera">
    - Character에서 제어하며, 입력의 Turn(Z축), LookUp(Y축)축 설정을 가져와 사용한다. (-3 ~ 3)
    - AddControllerInputYaw, Roll, Pitch라는 3가지 명령어로 제공한다. 이때 카메라와 폰의 회전이 연동되어 폰의 Rotation 값도 변경된다.
@@ -453,7 +450,7 @@
 
 > **<h3>Today Dev Story</h3>**
 
-- ### 삼인칭 컨트롤 구현(GTA 방식)
+- ### <span style = "color:yellow;">삼인칭 컨트롤 구현(GTA 방식)</span>
    - <img src="Image/SpringArm_Camera.gif" height="300" title="SpringArm_Camera">
    - SpringArm 컴포넌트를 사용하여 편리하게 구현이 가능하다.
    - 이전 방식과는 다르게 시점을 이동해도 캐릭터가 이동하지 않는다. (bUseControllerRotationYaw값 설정)
@@ -523,7 +520,7 @@
 
       </details>
 
-- ### 삼인칭 컨트롤 구현 (디아블로 방식)
+- ### <span style = "color:yellow;">삼인칭 컨트롤 구현 (디아블로 방식)</span>
    - 입력모드를 구분하도록 클래스 새로운 연거형을 선언, 현재 입력 모드를 보관할 멤버 변수를 추가했다. (각축의 입력을 보관한 벡터 추가)
       - <img src="Image/GTA_Type.gif" height="300" title="GTA_Type">
          
@@ -607,7 +604,7 @@
 
       </details>
 
-- ### 컨트롤 설정의 변경
+- ### <span style = "color:yellow;">컨트롤 설정의 변경</span>
    - <img src="Image/View_Switch.gif" height="300" title="View_Switch">
    - 특정 키(Shift + V)를 입력해서 앞의 두가지 조작 방식을 전환할 수 있도록 구현
       - FMath 클래스에서 제공하는 InterpTo(일정한 속도로 지정 목표까지 이동)를 사용하여 자연스럽게 변경
@@ -685,7 +682,7 @@
 
       </details>
 
-- ### 애니메이션 블루프린트
+- ### <span style = "color:yellow;">애니메이션 블루프린트</span>
    - <img src="Image/Anim_Instance.gif" height="300" title="Anim_Instance">
    - c++로 애님 인스턴스를 제작하여 Pawn의 속력을 저장하고 이 값에 따라 애님 그래프에서 애니메이션을 구분.
    - ABAnimInstance.cpp 생성 후 CurrentPawnSpeed라는 float 변수 추가 후 참조 가능하도록 설정
@@ -726,13 +723,13 @@
 
       </details>
 
-- ### 스테이트 머신 제작
+- ### <span style = "color:yellow;">스테이트 머신 제작</span>
    - <img src="Image/State_Machine.png" height="300" title="State_Machine">
    - 애님 그래프는 반복 수행을 설계하는 기능을 갖는 스테이트 머신 기능을 제공한다.
    - 위 사진과 같이 AnimGraph에 있던 애니메이션을 BaseAction의 Ground(스테이트)로 옮겼다.
    - 2번의 Entry 노드와 연결된 것을 시작 스테이트라고 하며, 이외의 연결은 조건을 통해 연결된다.
 
-- ### 점프 구현_1
+- ### <span style = "color:yellow;">점프 구현_1</span>
    - <img src="Image/Jump_Ani.gif" height="300" title="Jump_Ani">
    - ACharater 클래스에는 Jump라는 멤버 함수가 있으며, 바인딩이 가능하다.
    - 높이의 조절을 원하는 경우 GetCharacterMovement로 가져와서 JumpZVelcity 값을 변경한다. (※기본 420)
@@ -785,17 +782,17 @@
 
       </details>
 
-- ### 애니메이션 리타겟
+- ### <span style = "color:yellow;">애니메이션 리타겟</span>
    - <img src="Image/Retarget.png" height="300" title="Retarget">
    - 내가 가지고 있는 캐릭터에는 점프 애니메이션이 존재하지 않기 다른 스켈레톤의 애니메이션을 가져와야한다.
    - 각 타겟(2가지)의 스켈레톤을 리타깃(매핑)하면 서로 애니메이션을 교환할 수 있다.
 
-- ### 점프 구현_2
+- ### <span style = "color:yellow;">점프 구현_2</span>
    - <img src="Image/Jump_Ani_2.gif" height="300" title="Jump_Ani_2">
    - 점프 동작은 지형에 따라 체공 시간이 달라 지형을 고려하여 "도약(1번), 체공(무한), 착지(1번)"로 나뉜다.
    - 애니메이션의 종료시 다른 애니메이션으로의 전환을 쉽게 하려면 트랜지션 노드에서 제공하는 'Automatic Rule Based on Sequen Player in State'를 체크하면된다.
 
-- ### 애니메이션 몽타주 (공격 모션)
+- ### <span style = "color:yellow;">애니메이션 몽타주 (공격 모션)</span>
    - <img src="Image/Montage.gif" height="300" title="Montage">
    - 연속된 모션으로 공격하도록 애니메이션 기능 구현하기 위해 몽타주라는 기능을 사용한다.
    - 애님 몽타주 에셋을 제작하여 섹션을 단위로 애니메이션을 관리한다.
@@ -844,12 +841,6 @@
 
       </details>
 
-- ### 델리게이트 
-   - 몽타주의 재생이 끝나면 재공격 가능 여부를 알려주는 방식이 더 효과적이다. 이 방식이 바로 델리게이트이다.
-   - 특정 객체가 해야 할 로직을 다른 객체가 처리할 수 있도록 하는 설계이다. 하지만 c++에서는 지원하지 않기에 별도로 구축한 프레임워크를 사용한다.
-      - AnimInstance에서는 몽타주가 끝나면 OnMontageEnded 델리게이트를 제공한다.
-
-
 > **<h3>Realization</h3>**
 
 - 애니메이션 블루프린트는 아래와 같은 시스템이 있다.
@@ -872,7 +863,283 @@
 ## **05.31**
 
 > **<h3>Today Dev Story</h3>**
-   - null
+
+- ### <span style = "color:yellow;">델리게이트 </span>
+   - 몽타주의 재생이 끝나면 재공격 가능 여부를 알려주는 방식이 더 효과적이다. 이 방식이 바로 델리게이트이다.
+   - 특정 객체가 해야 할 로직을 다른 객체가 처리할 수 있도록 하는 설계이다. 하지만 c++에서는 지원하지 않기에 별도로 구축한 프레임워크를 사용한다.
+      - AnimInstance에서는 몽타주가 끝나면 OnMontageEnded 델리게이트를 제공한다. 이를 통해 몽타주가 끝나는 타이밍 파악 가능. UFUNCTION 매크로추가
+   - 애님 인스턴스에 몽타주의 끝을 알리고 원하는 함수를 실행시킨다. (이전 몽타주의 PlayAttackMontage의 조건(if)은 삭제한다.)
+   - 추가로 애님 인스턴스를 자주 사용하기 때문에 ABAnim이라는 클래스를 연동해 두었다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacter.h
+      virtual void PostInitializeComponents() override;
+       ...
+      UFUNCTION()
+      void OnAttackMontageEnded(UAnimMontage *Montage, bool bInterrupted);
+
+      private:
+         UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category=Attack, Meta = (AllowPrivateAccess = true))
+         bool IsAttacking;
+         
+         //자주 사용한 애님 인스턴스
+         UPROPERTY()
+         class UABAnimInstance* ABAnim;
+
+      //ABCharacter.cpp
+      IsAttacking = false;
+      ...
+      void AABCharacter::PostInitializeComponents()
+      {
+         Super::PostInitializeComponents();
+         ABAnim = Cast<UABAnimInstance>(GetMesh()->GetAnimInstance());
+         ABCHECK(nullptr != ABAnim);
+
+         //행동이 끝나면 다른 함수에게 알려준다.
+         ABAnim->OnMontageEnded.AddDynamic(this, &AABCharacter::OnAttackMontageEnded);
+      }
+      ...
+      void AABCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+      {
+         ABCHECK(IsAttacking);   //새로만든 매크로
+         IsAttacking = false;
+      }
+      ```
+
+      </details>
+
+- ### <span style = "color:yellow;">애니메이션 노티파이</span>
+   - <img src="Image/Notify_Ani.gif" height="300" title="Notify_Ani">
+   - 애니메이션을 재생하는 동안 특정 타이밍에 애님 인스턴스에게 신호를 보내는 기능이다. (일반 애니메이션, 몽타주 가능)
+   - 몽타주 시스템에서 원하는 타이밍에 노티파이를 추가하고 노티파이가 호출되면 "AnimNotify_노티파이명"을 찾아 호출한다.
+      - 언리얼 런타임이 찾을 수 있도록 UNFUNCTION()을 추가해준다.
+   - <img src="Image/Notify.png" height="300" title="Notify">
+      
+      - 위 사진처럼 노티파이와 섹션을 추가해 구분하고 연결 세션을 해제한다. (※ 이때 노티파이가 반을 넘어가면 오류가 발생한다.)
+      - 이때 AttackHitCheck, NextAttackCheck가 존재하며 각각 공격모션완료, 다음공격여부의 체크이다. 
+   - 코드의 원리
+      - ABCharacter에서 콤보에 사용할 MaxCombo, CurrentCombo, CanNextCombo, IsComboInputOn를 변수로 선언한다.
+      - 공격의 시작과 종료를 지정할 AttackStart(End)ComboState 함수를 선언한다.
+      - ABAnimInstance에서 콤보 카운트를 전달받으면 해당 몽타주 섹션을 재생하고 NextAttackCheck 노티파이 발생시 ABCharacter에 전달할 델리게이트틑 선언하고 호출한다.
+         - 이 델리게이트 기능을 자신이 뭐하는지 몰라도 연결된 함수만 있어도 한다. (※멀티캐스트로 선언했다.)
+      - 공격을 하면 ABCharacter는 콤보가 가능한지 파악하고 NextAttackCheck 타이밍 전까지 명령어가 오면 다음 콤보를 시작한다.
+      
+      <details><summary>코드 보기</summary>
+      
+      ```c++
+      //ABAnimInstance.h
+      DECLARE_MULTICAST_DELEGATE(FOnNextAttackCheckDelegate);
+      DECLARE_MULTICAST_DELEGATE(FOnAttackHitCheckDelegate);
+      ...
+      public:
+      UABAnimInstance();
+      virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+
+      void PlayAttackMontage();
+      void JumpToAttackMontageSection(int32 NewSection);
+
+      public:
+         FOnNextAttackCheckDelegate OnNextAttackCheck;
+         FOnAttackHitCheckDelegate OnAttackHitCheck;
+
+      private:
+         UFUNCTION()
+         void AnimNotify_AttackHitCheck();
+
+         UFUNCTION()
+         void AnimNotify_NextAttackCheck();
+
+         FName GetAttackMontageSectionName(int32 Section);
+
+      private:
+         UFUNCTION()
+         void AnimNotify_AttackHitCheck();
+         
+      //ABAniInstance.cpp
+      void UABAnimInstance::JumpToAttackMontageSection(int32 NewSection)
+      {
+         ABCHECK(Montage_IsPlaying(AttackMontage));
+         Montage_JumpToSection(GetAttackMontageSectionName(NewSection), AttackMontage);
+      }
+
+      void UABAnimInstance::AnimNotify_AttackHitCheck()
+      {
+         OnAttackHitCheck.Broadcast();
+      }
+
+      void UABAnimInstance::AnimNotify_NextAttackCheck()
+      {
+         OnNextAttackCheck.Broadcast();
+      }
+
+      FName UABAnimInstance::GetAttackMontageSectionName(int32 Section)
+      {
+         ABCHECK(FMath::IsWithinInclusive<int32>(Section, 1, 4), NAME_None);
+         return FName(*FString::Printf(TEXT("Attack%d"), Section));
+      }
+
+      //ABCharacter.h	
+      void AttackStartComboState();
+      void AttackEndComboState();
+      ...
+
+      UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+      bool CanNextCombo;
+
+      UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+      bool IsComboInputOn;
+
+      UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+      int32 CurrentCombo;
+
+      UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+      int32 MaxCombo;
+
+      //ABCharacter.
+      void AABCharacter::PostInitializeComponents()
+      {
+         ...
+
+         //콤보
+         ABAnim->OnNextAttackCheck.AddLambda([this]() -> void
+         {
+            ABLOG(Warning, TEXT("OnNextAttackCheck"));
+            CanNextCombo = false;
+
+            if(IsComboInputOn)
+            {
+               AttackStartComboState();
+               ABAnim->JumpToAttackMontageSection(CurrentCombo);
+            }
+         });
+      }
+      void AABCharacter::Attack()
+      {
+         if(IsAttacking)
+         {
+            ABCHECK(FMath::IsWithinInclusive<int32>(CurrentCombo,1,MaxCombo));
+            if(CanNextCombo)
+            {
+               IsComboInputOn = true;
+            }
+         }
+         else
+         {
+            ABCHECK(CurrentCombo == 0);
+            AttackStartComboState();
+            ABAnim->PlayAttackMontage();
+            ABAnim->JumpToAttackMontageSection(CurrentCombo);
+            IsAttacking = true;
+         }
+      }
+
+      void AABCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+      {
+         ABCHECK(IsAttacking);
+         ABCHECK(CurrentCombo > 0);
+         IsAttacking = false;
+         AttackEndComboState();
+      }
+      void AABCharacter::AttackStartComboState()	//콤보 시작
+      {
+         CanNextCombo = true;
+         IsComboInputOn = false;
+         ABCHECK(FMath::IsWithinInclusive<int32>(CurrentCombo, 0, MaxCombo - 1));
+         CurrentCombo = FMath::Clamp<int32>(CurrentCombo + 1, 1, MaxCombo);
+      }
+      void AABCharacter::AttackEndComboState()	//콤보 종료
+      {
+         IsComboInputOn = false;
+         CanNextCombo = false;
+         CurrentCombo = 0;
+      }
+      ```
+      
+      </details>
+      
+- ### <span style = "color:yellow;">콜리전 & 트레이스 채널 설정</span>
+   - <img src="Image/Attack_Collision.gif" height="300" title="Attack_Collision">
+   - 완성후 로그를 띄운화면
+      1. ### 콜리전 설정
+         - <img src="Image/Collision_Set.png" height="300" title="Collision_Set">
+         - 언리얼 엔진에서는 무시 반응을 최대화하고 블록 반응을 최소화한다.
+         - 위의 사진과 같이 "ABCharacter"라는 이름으로 Object Channel과 Preset을 만들어 준 뒤 설정을 변경하고 ABCharacter를 할당해준다.
+            ```c++
+            //ABCharacter.cpp
+            //내가 만든 콜리전을 할당
+            GetCapsuleComponent()->SetCollisionProfileName(TEXT("ABCharacter"));
+            ```
+      
+      2. ### 트레스 채널 설정
+         - <img src="Image/Channel_Num.png" height="300" title="Channel_Num">
+         - 위의 사진은 할당된 Channel 번호이다.
+         - 공격 행동은 특정 타이밍에 발생되기 때문에  <span style = "color:yellow;">트레이스 채널</span>을 사용해야한다.
+         - Attack 트레이스 채널을 생성하고 ABCharacter 콜리전과의 반응을 블록으로 지정한다.
+         - 트레이스 채널을 사용해 물리적 충돌 여부를 가리는 함수 SweepSingleByCannel을 사용하여 공격 판정을 내리는 로직을 추가한다.
+            - 기본 도형을 인자로 받아 시작 지점에서 끝 지점까지 쓸면서 물리 판정이 일어났는지를 확인한다.
+            - FCollisionShape::MakeShpere을 통해 도형을 제작하고 탐색하고 충돌된 액터를 구조체(FHitResult)로 넘긴다.
+         
+            <details><summary>코드 보기</summary>
+
+            ```c++
+            //ABCharacter.cpp
+            AABCharacter::AABCharacter()
+            {
+               ....
+               //내가 만든 콜리전을 할당
+               GetCapsuleComponent()->SetCollisionProfileName(TEXT("ABCharacter"));
+            }
+            //가상의 구를 만들어 공격을 체크 
+            void AABCharacter::AttackCheck()
+            {
+               FHitResult HitResult; //맞은 정보를 저장
+               FCollisionQueryParams Params(NAME_None, false, this);
+               bool bReslut = GetWorld()->SweepSingleByChannel(
+                  HitResult,
+                  GetActorLocation(),
+                  GetActorLocation() + GetActorForwardVector() * 200.0f,
+                  FQuat::Identity,
+                  ECollisionChannel::ECC_GameTraceChannel2,	//Attack의 채널번호
+                  FCollisionShape::MakeSphere(50.0f),
+                  Params);
+
+               if(bReslut)
+               {
+                  if(HitResult.Actor.IsValid())
+                  {
+                     ABLOG(Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+                  }
+               }
+            }
+            ```
+
+            </details>
 
 > **<h3>Realization</h3>**
+   - ### 람다식 구문
+      - 헤더에 선언할 필요없이 간단한 로직 구현
+      - 람다 소개자 : []로 표시되며 람다 구문이 참조할 환경을 지정
+      - 파라미터 리스트 : 람다 함수가 사용할 파라미터를 지정 (※ 빈괄호 가능)
+      - 후행 반환 타입 : 람다 함수가 반환할 타입을 지정
+      - 람다 함수 구문 : {}에 로직을 넣어준다.
+         ```c++
+         //example
+         [this]() -> void{ ~~~ };
+         ```
+
+   - ### 콜리전
+      |방법|설명|
+      |:--:|:--:|
+      |스태틱메시 에셋|스태틱메시 에셋에 콜리전 영역을 심는 방법이다. 에디터에서 확인 가능하며 해당 컴포넌트에서 비주얼과 충돌 두가지 기능을 설정 가능하다. BlockAll이라는 기본 설정이 있어 캐릭터의 이동을 방해하는 콘텐츠를 제작 가능하다.|
+      |기본도형 컴포넌트|기본 도형을 사용해 충돌영역을 지정하는 방법이다. 별도의 충돌영역을 제작할때 사용하며 스켈레탈 메시를 움직일때 사용한다.|
+      |피직스 애셋|헝겊 인형효과를 구현할때 사용하며, 스켈레탈 메시에만 사용할 수 있다.|
+
+## **06.01**
+
+> **<h3>Today Dev Story</h3>**
+   - null
+> **<h3>Realization</h3>**
+
    - null
