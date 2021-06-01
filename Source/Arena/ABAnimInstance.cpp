@@ -6,6 +6,7 @@
 UABAnimInstance::UABAnimInstance()
 {
 	CurrentPawnSpeed = 0.0f;
+	IsDead = false;
 	IsInAir = false;
 
 	static ConstructorHelpers::FObjectFinder<UAnimMontage>
@@ -22,7 +23,9 @@ void UABAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	Super::NativeUpdateAnimation(DeltaSeconds);
 
 	auto Pawn = TryGetPawnOwner();	//유효검사
-	if(::IsValid(Pawn))
+	if(!::IsValid(Pawn)) return;
+
+	if(!IsDead)	//죽지 않았다면
 	{
 		CurrentPawnSpeed = Pawn->GetVelocity().Size();	//속도를 얻어온다.
 		
@@ -36,6 +39,7 @@ void UABAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 void UABAnimInstance::PlayAttackMontage()	//몽타주 실행
 {
+	ABCHECK(!IsDead);
 	Montage_Play(AttackMontage, 1.0f);
 }
 
@@ -43,6 +47,7 @@ void UABAnimInstance::PlayAttackMontage()	//몽타주 실행
 
 void UABAnimInstance::JumpToAttackMontageSection(int32 NewSection)
 {
+	ABCHECK(!IsDead);
 	ABCHECK(Montage_IsPlaying(AttackMontage));
 	Montage_JumpToSection(GetAttackMontageSectionName(NewSection), AttackMontage);
 }

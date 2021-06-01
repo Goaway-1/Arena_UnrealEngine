@@ -1139,7 +1139,128 @@
 ## **06.01**
 
 > **<h3>Today Dev Story</h3>**
-   - null
-> **<h3>Realization</h3>**
+- ### 디버그 드로잉
+   - <img src="Image/Debug_Drawing.gif" height="300" title="Debug_Drawing">
+   - 공격할때 디보그 드로잉 기능을 사용해서 공격 범위를 시각적으로 보이게 한다. 닿지 않으면 빨간색 닿으면 녹색으로 표시된다.
+   - 이를 위해서는 소스 상단에 DrawDebugHelper.h를 추가해야한다.
+      <details><summary>코드 보기</summary>
 
-   - null
+      ```c++
+      //ABCharacter.h
+      //디버그 드로잉
+      UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category=Attack, Meta=(AllowPrivateAccess = true))
+      float AttackRange;
+
+      UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category=Attack, Meta=(AllowPrivateAccess = true))
+      float AttackRadius;
+
+      //ABCharacter.cpp
+      #include "DrawDebugHelpers.h"
+      ...
+      AABCharacter::AABCharacter()
+      {
+         ...
+         AttackRange = 200.0f;
+         AttackRadius = 50.0f;
+      }
+      ...
+      void AABCharacter::AttackCheck()
+      {
+         ...
+      #if ENABLE_DRAW_DEBUG
+         //설정들
+         FVector TraceVec = GetActorForwardVector() * AttackRange;
+         FVector Center = GetActorLocation() + TraceVec * 0.5f;
+         float HalfHeight = AttackRange * 0.5f + AttackRadius;
+         FQuat CapsuleRot = FRotationMatrix::MakeFromZ(TraceVec).ToQuat();
+         FColor DrawColor = bReslut ? FColor::Green : FColor::Red;
+         float DebugLifeTime = 5.0f;
+
+         //실제로 그려지는 부분
+         DrawDebugCapsule(GetWorld(),Center,HalfHeight,AttackRadius,CapsuleRot,DrawColor,false,DebugLifeTime);
+
+      #endif
+
+         if(bReslut)
+         {
+            if(HitResult.Actor.IsValid())
+            {
+               ABLOG(Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+            }
+         }
+      }
+      ```
+
+      </details>
+
+- ### 데미지 프레임워크
+   - <img src="Image/Damage_FrameWork.gif" height="300" title="Damage_FrameWork">
+   - 엔진이 제공하는 데이미 프레임워크를 사용하여 액터에 데미지를 쉽게 전달할 수 있다.
+      - AActor에 TakeDamage라는 함수가 구현되어 있다. 이 함수를 사용하여 쉽게 정달가능하다. (※모든 액터에는 Can be Damaged 속성이 있다.)
+   - 파라미터 중 가해자 인자가 있는데 이것은 Pawn이 아닌 Controller의 정보를 보내줘야한다.  
+   - AttackCheck()에서 데미지를 전달하고 50이상의 데미지가 들어왔다면 죽는 모션을 보여주고 Collision을 끈다. (더 이상 실행 X) 
+
+      <details><summary>코드 보기(데미지 판단)</summary>
+
+      ```c++
+      //ABCharacter.h
+      public:	
+	      virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+      
+      //ABCharater.cpp
+      float AABCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+      {
+         float FinalDamage = Super::TakeDamage(DamageAmount,DamageEvent,EventInstigator,DamageCauser);
+         ABLOG(Warning, TEXT("Actor : %s took Damage : %f"),*GetName(),FinalDamage);
+         return FinalDamage;
+      }
+
+      void AABCharacter::AttackCheck()
+      {
+         ...
+         ...
+         if(bReslut)
+         {
+            if(HitResult.Actor.IsValid())
+            {
+               ABLOG(Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+
+               //데미지의 전달
+               FDamageEvent DamageEnvent;
+               HitResult.Actor->TakeDamage(50.0f, DamageEnvent, GetController(), this);
+            }
+         }
+      }
+      ```
+
+      </details>
+
+
+      <details><summary>코드 보기(죽는 애니메이션)</summary>
+
+      ```c++
+      //ABAnimInstance.h
+      void SetDeadAnim() { IsDead = true;}
+      ...
+      UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Pawn, Meta=(AllowPrivateAccess=true))
+	   bool IsDead;
+      //ABAnimInstance.cpp ->  여러가지 추가
+      //ABCharacter.cpp -> 애니메이션 추가
+      float AABCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+      {
+         ...
+         if(FinalDamage > 0.0f)
+         {
+            ABAnim->SetDeadAnim();
+            SetActorEnableCollision(false);
+         }
+         return FinalDamage;
+      }
+      ```
+
+      </details>
+
+
+> **<h3>Realization</h3>**
+- 애니메이션 에디터에 접근시 비정상적으로 종료되는 현상이 발생되었는데, 패키지를 모두 설치하지 않아 해결에 어려움이 있었다.
+- 단순히 c++내의 문맥 오류였는데 애니메이션 접근시 오류가 발생해 오랜 시간이 소요되었다.   

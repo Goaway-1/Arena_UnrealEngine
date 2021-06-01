@@ -3,6 +3,7 @@
 
 #include "ABCharacter.h"
 #include "ABAnimInstance.h"
+#include "DrawDebugHelpers.h"
 
 // Sets default values
 AABCharacter::AABCharacter()
@@ -51,6 +52,9 @@ AABCharacter::AABCharacter()
 
 	//내가 만든 콜리전을 할당
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("ABCharacter"));
+
+	AttackRange = 200.0f;
+	AttackRadius = 50.0f;
 }
 
 // Called when the game starts or when spawned
@@ -256,6 +260,19 @@ void AABCharacter::AttackEndComboState()	//콤보 종료
 	CurrentCombo = 0;
 }
 
+float AABCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+	float FinalDamage = Super::TakeDamage(DamageAmount,DamageEvent,EventInstigator,DamageCauser);
+	ABLOG(Warning, TEXT("Actor : %s took Damage : %f"),*GetName(),FinalDamage);
+
+	if(FinalDamage > 0.0f)
+	{
+		ABAnim->SetDeadAnim();
+		SetActorEnableCollision(false);
+	}
+	return FinalDamage;
+}
+
 void AABCharacter::AttackCheck()
 {
 	FHitResult HitResult; //맞은 정보를 저장
@@ -268,12 +285,27 @@ void AABCharacter::AttackCheck()
 		ECollisionChannel::ECC_GameTraceChannel2,	//Attack의 채널번호
 		FCollisionShape::MakeSphere(50.0f),
 		Params);
+	
+#if ENABLE_DRAW_DEBUG
+	FVector TraceVec = GetActorForwardVector() * AttackRange;
+	FVector Center = GetActorLocation() + TraceVec * 0.5f;
+	float HalfHeight = AttackRange * 0.5f + AttackRadius;
+	FQuat CapsuleRot = FRotationMatrix::MakeFromZ(TraceVec).ToQuat();
+	FColor DrawColor = bReslut ? FColor::Green : FColor::Red;
+	float DebugLifeTime = 5.0f;
+
+	DrawDebugCapsule(GetWorld(),Center,HalfHeight,AttackRadius,CapsuleRot,DrawColor,false,DebugLifeTime);
+
+#endif
 
 	if(bReslut)
 	{
 		if(HitResult.Actor.IsValid())
 		{
 			ABLOG(Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+
+			FDamageEvent DamageEnvent;
+			HitResult.Actor->TakeDamage(50.0f, DamageEnvent, GetController(), this);
 		}
 	}
 }
