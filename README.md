@@ -1264,3 +1264,133 @@
 > **<h3>Realization</h3>**
 - 애니메이션 에디터에 접근시 비정상적으로 종료되는 현상이 발생되었는데, 패키지를 모두 설치하지 않아 해결에 어려움이 있었다.
 - 단순히 c++내의 문맥 오류였는데 애니메이션 접근시 오류가 발생해 오랜 시간이 소요되었다.   
+
+## **06.02**
+> **<h3>Today Dev Story</h3>**
+- ### 무기 착용
+   - <img src="Image/Weapon.gif" height="300" title="Weapon">
+   - <img src="Image/Socket_Setting.gif" height="300" title="Socket_Setting">
+   - 무기와 같은 액세서리는 트랜스폼이 아닌 메시에 착용해야 한다. 그를 위해 소켓이라는 시스템을 지원한다.
+   - 스켈레톤 트리 > hand_rSocket > BlackKnight 무기 착용 후 위치 값을 조정한다.
+   - 무기는 바뀔수 있기 때문에 따로 Actor 클래스의 ABPeapon을 제작하였다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABWeapon.h
+      UPROPERTY(VisibleAnywhere, Category=Weapon)
+	   USkeletalMeshComponent* Weapon;
+      //ABWeapon.cpp
+      AABWeapon::AABWeapon()
+      {
+         // Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+         PrimaryActorTick.bCanEverTick = false; //
+         
+         //칼을 넣어줌
+         Weapon = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WEAPON"));
+         RootComponent = Weapon;
+
+         static ConstructorHelpers::FObjectFinder<USkeletalMesh>
+         SK_WEAPON(TEXT("/Game/InfinityBladeWeapons/Weapons/Blade/Axes/Blade_AnthraciteAxe/SK_Blade_AnthraciteAxe.SK_Blade_AnthraciteAxe"));
+         if(SK_WEAPON.Succeeded())
+         {
+            Weapon->SetSkeletalMesh(SK_WEAPON.Object);
+         }
+         Weapon->SetCollisionProfileName(TEXT("NoCollision"));	//충돌 없음
+      }
+
+      //ABCharacter.cpp
+      #include "ABWeapon.h"
+      void AABCharacter::BeginPlay()
+      {
+         Super::BeginPlay();
+         
+         FName WeaponSocket(TEXT("hand_rSocket"));
+         auto CurWeapon = GetWorld()->SpawnActor<AABWeapon>(FVector::ZeroVector, FRotator::ZeroRotator);
+         if(nullptr != CurWeapon)
+         {
+            CurWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+         }
+      }
+      ```
+
+      </details>
+
+- ### 아이템 상자의 제작
+   - <img src="Image/WeaponBox.png" height="300" title="WeaponBox">
+   - 플레이어에게 무기를 공급해줄 아이템 상자를 제작한다. (Actor를 부모로 하는 ABItemBox생성)
+   - 플레이어를 감지하는 콜리전 박스(Root), 아이템 상자를 시각화해주는 스태틱메시(자식)로 나뉜다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      AABItemBox::AABItemBox()
+      {
+         // Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+         PrimaryActorTick.bCanEverTick = false;
+
+         Trigger = CreateDefaultSubobject<UBoxComponent>(TEXT("TRIGGER"));
+         Box = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BOX"));
+
+         RootComponent = Trigger;
+         Box->SetupAttachment(RootComponent);
+
+         Trigger->SetBoxExtent(FVector(40.0f,42.0f,30.0f));	//박스의 절반값
+         static ConstructorHelpers::FObjectFinder<UStaticMesh>
+         SM_BOX(TEXT("/Game/InfinityBladeGrassLands/Environments/Breakables/StaticMesh/Box/SM_Env_Breakables_Box1.SM_Env_Breakables_Box1"));
+         if(SM_BOX.Succeeded())
+         {
+            Box->SetStaticMesh(SM_BOX.Object);
+         }
+         Box->SetRelativeLocation(FVector(0.0f,-3.5f,-30.0f));
+      }
+      ```
+
+      </details>
+
+   - <img src="Image/Overlap.png" height="300" title="Overlap">
+   - 폰이 아이템을 획득하도록 아이템 상자에 오브젝트 채널을 추가한다. ItemBox라는 오브젝트 채널과(Ignore) 프로그파일을 생성하고 플레이어에 대해서만 겹칩으로 설정한다.
+   - 박스 컴포넌트에서는 캐릭터를 감지할 수 있게 Overlap 이벤트를 처리하도록 OnComponentBeginOverlap이라는 델리게이트를 사용한다.
+      
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABItemBox.h
+      protected:
+         virtual void PostInitializeComponents() override;
+      private:
+         UFUNCTION()
+         void OnCharacterOverlap(UPrimitiveComponent* OverlappedComp, AActor *OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,boolbFromSweep, const FHitResult& SweepResult);
+      
+      //ABItemBox.cpp
+      AABItemBox::AABItemBox()
+      {
+         //충돌 이름
+         Trigger->SetCollisionProfileName(TEXT("ItemBox"));
+         Box->SetCollisionProfileName(TEXT("NoCollision"));
+      }
+      ...
+      void AABItemBox::PostInitializeComponents()
+      {
+         Super::PostInitializeComponents();
+         Trigger->OnComponentBeginOverlap.AddDynamic(this, &AABItemBox::OnCharacterOverlap);	//닿으면 실행한다.
+      }
+
+      void AABItemBox::OnCharacterOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+      {
+         ABLOG_S(Warning);
+      }
+      ```
+
+      </details>
+
+> **<h3>Realization</h3>**
+   - 무기와 같은 액세서리는 트랜스폼이 아닌 메시에 착용해야 한다. 그를 위해 소켓이라는 시스템을 지원한다.
+      
+      <details><summary>코드 보기</summary>
+
+      ```c++
+     
+      ```
+
+      </details>
