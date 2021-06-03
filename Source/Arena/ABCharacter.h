@@ -39,6 +39,14 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	//무기 생성
+	bool CanSetWeapon();
+	void SetWeapon(class AABWeapon* NewWeapon);
+
+	UPROPERTY(VisibleAnywhere, Category=Weapon)
+	class AABWeapon* CurrentWeapon;
+	//무기 생성 종료
+
 	UPROPERTY(VisibleAnywhere, Category=Camera)
 	USpringArmComponent *SpringArm;
 

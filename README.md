@@ -1139,7 +1139,7 @@
 ## **06.01**
 
 > **<h3>Today Dev Story</h3>**
-- ### 디버그 드로잉
+- ### <span style = "color:yellow;">디버그 드로잉</span>
    - <img src="Image/Debug_Drawing.gif" height="300" title="Debug_Drawing">
    - 공격할때 디보그 드로잉 기능을 사용해서 공격 범위를 시각적으로 보이게 한다. 닿지 않으면 빨간색 닿으면 녹색으로 표시된다.
    - 이를 위해서는 소스 상단에 DrawDebugHelper.h를 추가해야한다.
@@ -1193,7 +1193,7 @@
 
       </details>
 
-- ### 데미지 프레임워크
+- ### <span style = "color:yellow;">데미지 프레임워크</span>
    - <img src="Image/Damage_FrameWork.gif" height="300" title="Damage_FrameWork">
    - 엔진이 제공하는 데이미 프레임워크를 사용하여 액터에 데미지를 쉽게 전달할 수 있다.
       - AActor에 TakeDamage라는 함수가 구현되어 있다. 이 함수를 사용하여 쉽게 정달가능하다. (※모든 액터에는 Can be Damaged 속성이 있다.)
@@ -1267,7 +1267,7 @@
 
 ## **06.02**
 > **<h3>Today Dev Story</h3>**
-- ### 무기 착용
+- ### <span style = "color:yellow;">무기 착용</span>
    - <img src="Image/Weapon.gif" height="300" title="Weapon">
    - <img src="Image/Socket_Setting.gif" height="300" title="Socket_Setting">
    - 무기와 같은 액세서리는 트랜스폼이 아닌 메시에 착용해야 한다. 그를 위해 소켓이라는 시스템을 지원한다.
@@ -1316,7 +1316,7 @@
 
       </details>
 
-- ### 아이템 상자의 제작
+- ### <span style = "color:yellow;">아이템 상자의 제작</span>
    - <img src="Image/WeaponBox.png" height="300" title="WeaponBox">
    - 플레이어에게 무기를 공급해줄 아이템 상자를 제작한다. (Actor를 부모로 하는 ABItemBox생성)
    - 플레이어를 감지하는 콜리전 박스(Root), 아이템 상자를 시각화해주는 스태틱메시(자식)로 나뉜다.
@@ -1386,11 +1386,258 @@
 
 > **<h3>Realization</h3>**
    - 무기와 같은 액세서리는 트랜스폼이 아닌 메시에 착용해야 한다. 그를 위해 소켓이라는 시스템을 지원한다.
-      
-      <details><summary>코드 보기</summary>
 
-      ```c++
-     
-      ```
 
-      </details>
+## **06.03**
+> **<h3>Today Dev Story</h3>**
+- ### <span style = "color:yellow;">아이템의 습득</span>
+   1. ### 아이템 상자를 통과하면 빈손의 플레이어에게 무기를 쥐어주는 기능을 구현하며, 클래스 정보를 저장할 속성을 추가하고 이 값을 기반으로 생성한다.
+   - <img src="Image/Equip_Weapon.gif" height="350" title="Equip_Weapon">
+
+      - 클래스 정보 저장시 UClass의 포인트가 아닌 TSubclassof라는 키워드를 사용해 특정 상속 클래스만을 보이게한다.
+      - 무기를 장착시키는 SetWeapon이라는 함수를 선언하여 현재 무기가 없으면 장착하고 소유자를 캐릭터로 변경한다. (기존 BeginPlay내의 로직은 삭제)
+      - 상자에 다가가면 무기가 착용되고 두 번 습득하면 착용할 수 없다는 로그가 발생한다. (기존 구현한 Overlap함수 사용)
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABItemBox.h
+         UPROPERTY(EditInstanceOnly, Category=Box)
+         TSubclassOf<class AABWeapon> WeaponItemClass;
+         
+         //ABItemBox.cpp
+         #include <ABCharacter.h>
+         AABItemBox::AABItemBox()
+         {
+            ...
+            //해당 속성에 대한 기본 클래스 값을 지정한다.
+            WeaponItemClass = AABWeapon::StaticClass();
+         }
+         ...
+         void AABItemBox::OnCharacterOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult) //오버랩이 진행되었을때
+         {
+            ABLOG_S(Warning);
+
+            auto ABCharacter = Cast<AABCharacter>(OtherActor);
+            ABCHECK(nullptr != ABCharacter);
+
+            if(nullptr != ABCharacter && nullptr != WeaponItemClass)
+            {
+               if(ABCharacter->CanSetWeapon())
+               {
+                  auto NewWeapon = GetWorld()->SpawnActor<AABWeapon>(WeaponItemClass,FVector::ZeroVector, FRotator::ZeroRotator);
+                  ABCharacter->SetWeapon(NewWeapon);
+               }
+               else
+               {
+                  ABLOG(Warning,TEXT("%s can't equip weapon currently"),*ABCharacter->GetName());
+               }
+            }
+         }
+
+         //ABCharacter.h
+         //무기 생성
+         bool CanSetWeapon();
+         void SetWeapon(class AABWeapon* NewWeapon);
+
+         UPROPERTY(VisibleAnywhere, Category=Weapon)
+         class AABWeapon* CurrentWeapon;
+
+         //ABCharacter.cpp
+         bool AABCharacter::CanSetWeapon()	//무기 장착 가능 여부
+         {
+            return (nullptr == CurrentWeapon);
+         }
+
+         void AABCharacter::SetWeapon(AABWeapon* NewWeapon)	//무기를 장착시키는 로직
+         {
+            ABCHECK(nullptr != NewWeapon && nullptr == CurrentWeapon);
+            FName WeaponSocket(TEXT("hand_rSocket"));
+            if(nullptr != NewWeapon)
+            {
+               NewWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+               NewWeapon->SetOwner(this);
+               CurrentWeapon = NewWeapon;
+            }
+         }
+         ```
+
+         </details>
+
+   2. ### 아이템을 습득하면 이펙트를 재생하고 상자가 사라지는 기능을 구현한다.
+   - <img src="Image/Box_Effect.gif" height="300" title="Box_Effect">
+
+      - 상자 액터에 파티클 컴포넌트를 추가한 후 경로를 지정한다. 멤버 변수를 추가하여 파티클 컴포넌트에서 제공하는 OnSystemFinished 델리데이트에 연결해 로직을 구현한다. (UFUNCTION 매크로 선언)
+      - 이펙트 재생 기간동안은 액터 충돌 기능, 박스 스테딕메시를 제거해 무기를 두번 습득하지 못하도록 방지한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABItemBox.h
+         UPROPERTY(VisibleAnywhere, Category=Effect)
+         UParticleSystemComponent* Effect;
+         ...
+         UFUNCTION()
+         void OnEffectFinished(class UParticleSystemComponent* PSystem);
+
+         //ABItemBox.cpp
+         AABItemBox::AABItemBox()
+         {
+            Effect = CreateDefaultSubobject<UParticleSystemComponent>(TEXT("EFFECT"));
+            Effect->SetupAttachment(RootComponent);
+            
+            static ConstructorHelpers::FObjectFinder<UParticleSystem>
+            P_CHESTOPEN(TEXT("/Game/InfinityBladeGrassLands/Effects/FX_Treasure/Chest/P_TreasureChest_Open_Mesh.P_TreasureChest_Open_Mesh"));
+            if(P_CHESTOPEN.Succeeded())
+            {
+               Effect->SetTemplate(P_CHESTOPEN.Object);
+               Effect->bAutoActivate = false;	
+            }
+         }
+         ...
+         void AABItemBox::OnCharacterOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+         {
+            ...
+            if(nullptr != ABCharacter && nullptr != WeaponItemClass)
+            {
+               if(ABCharacter->CanSetWeapon())
+               {
+                  ...
+                  Effect->Activate(true);	//효과 발생
+                  Box->SetHiddenInGame(true, true);	//숨기는 기능
+                  SetActorEnableCollision(false);	//collsion기능 끔
+                  Effect->OnSystemFinished.AddDynamic(this, &AABItemBox::OnEffectFinished);	//끝나면
+               }
+               ...
+            }
+         }
+         ...
+         void AABItemBox::OnEffectFinished(UParticleSystemComponent* PSystem)
+         {
+            Destroy();
+         }
+         ```
+
+         </details>
+
+   3. ### 아이템 상자에서 다른 무기를 생성할 수 있도록 추가한다.
+   - <img src="Image/Other_Weapon.gif" height="300" title="Other_Weapon">
+
+      - 매번 c++ 클래스를 추가하는 것은 번거로우니 블루프린트를 사용해 ABWeapon을 상속받은 객체를 다수 생성한다.
+      - 상자의 WeaponClass를 방금 생성한 클래스로 수정하면 완료된다.
+
+- ### <span style = "color:yellow;">엑셀 데이터 활용</span>
+   - 엑셀에 저장되어 있는 캐릭터의 스탯 데이터 테이블을 엔진에 불러오는 기능을 구현한다.
+   - 게임 인스턴스를 통해 캐릭터의 스탯을 관리하도록 설정하면 초기화시 데이터를 불러들이고 종료시까지 보존할 수 있다.
+   - GameInstance를 부모로 하는 클래스 ABGameInstance를 제작하고 프로젝트 세팅 > 맵 & 모드의 항목을 변경한다.
+      - 게임 앱이 초기화되면 엔진은 GameInstance의 Init함수를 가장 먼저 구현한다.
+
+   1. ### 데이터 애셋 임포트
+   - <img src="Image/CSV_Import.png" height="300" title="CSV_Import">
+
+      - CSV파일을 불러오기 위해서는 각 열의 이름과 유형이 동일한 구조체를 선언해야한다. 
+         - FTableRowBase > FABCharacterData라는 구조체 헤더에 선언
+         - USTRUCT, GENERATED_BODY 매크로 선언
+      - CSV파일(ABCharaterDate.csv)을 임포트 할때 데이터 테이블 행 타입을 ABCharacterData로 바꾸고 적용한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABGameInstance.h
+         #include "Engine/DataTable.h"
+
+         USTRUCT(BlueprintType)
+         struct FABCharaterData : public FTableRowBase
+         {
+            GENERATED_BODY()
+
+         public:
+            FABCharaterData() : Level(1), MaxHP(100.0f), Attack(10.0f), DropExp(10), NextExp(30){}
+
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
+            int32 Level;
+            
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
+            float MaxHP;
+            
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
+            float Attack;
+            
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
+            int32 DropExp;
+            
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
+            int32 NextExp;
+         };
+
+         //ABGameInstance.cpp
+         UABGameInstance::UABGameInstance()
+         {
+            
+         }
+
+         void UABGameInstance::Init()
+         {
+            Super::Init();
+            ABLOG_S(Warning);
+         }
+
+         ```
+
+         </details>
+
+   2. ### 데이터 에셋을 게임 인스턴스에서 로딩하는 기능
+   - <img src="Image/Check_TableData.png" height="200" title="Check_TableData">
+
+      - 테이블 데이터를 관리하기 위해 DataTable이라는 오브젝트를 제공한다.
+      - Init 함수에서 해당 데이터가 잘 로딩되었는지 파악하도록 20Level의 데이터를 출력한다. 
+          
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABGameInstance.h
+         FABCharaterData* GetABCharacterData(int32 Level);
+
+         private:
+            UPROPERTY()
+            class UDataTable* ABCharacterTable;
+         
+         //ABGameInstance.cpp
+         UABGameInstance::UABGameInstance()
+         {
+            FString CharacterDataPath = TEXT("/Game/Book/GameData/ABCharacterData.ABCharacterData");
+            static  ConstructorHelpers::FObjectFinder<UDataTable>
+            DT_ABCHARACTER(*CharacterDataPath);
+
+            ABCHECK(DT_ABCHARACTER.Succeeded());
+            ABCharacterTable = DT_ABCHARACTER.Object;
+            ABCHECK(ABCharacterTable->GetRowMap().Num() > 0);
+         }
+         ...
+         void UABGameInstance::Init()
+         {
+            Super::Init();
+            ABLOG(Warning, TEXT("DropExp of Level 20 ABCharacter : %d"),GetABCharacterData(20)->DropExp);
+         }
+
+         FABCharaterData* UABGameInstance::GetABCharacterData(int32 Level)
+         {
+            return ABCharacterTable->FindRow<FABCharaterData>(*FString::FromInt(Level),TEXT(""));
+         }
+         ```
+
+         </details>
+
+> **<h3>Realization</h3>**
+- <img src="Image/Playing_Process.jpg" height="200" title="Playing_Process">
+
+   - 게임시작 과정은 아래 사진과 같다.
+- 엑셀로 저장된 데이터를 불러오기 위해서는 CSV파일로 저장되어 있어야한다.
+
+
+## **06.04**
+> **<h3>Today Dev Story</h3>**
+- ### <span style = "color:yellow;">액터 컴포넌트 제작</span>
+
+> **<h3>Realization</h3>**
+- null
