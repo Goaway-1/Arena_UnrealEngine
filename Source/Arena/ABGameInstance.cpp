@@ -20,7 +20,7 @@ void UABGameInstance::Init()
 	ABLOG(Warning, TEXT("DropExp of Level 20 ABCharacter : %d"),GetABCharacterData(20)->DropExp);
 }
 
-FABCharaterData* UABGameInstance::GetABCharacterData(int32 Level)
+FABCharacterData* UABGameInstance::GetABCharacterData(int32 Level)
 {
-	return ABCharacterTable->FindRow<FABCharaterData>(*FString::FromInt(Level),TEXT(""));
+	return ABCharacterTable->FindRow<FABCharacterData>(*FString::FromInt(Level),TEXT(""));
 }

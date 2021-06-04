@@ -402,7 +402,7 @@
    - 코드는 Pawn과 동일하며 Mesh, capsule, movement는 기본제공하여 따로 구현할 필요가 없고 Get을 사용하여 호출한다. 아래와 같다.
    - ABGameMode에서 기본 Pawn으로 ABPawn을 사용하지 않고 ABCharacter로 변경해준다.
       ```c++
-      //ABCharater.cpp
+      //ABCharacter.cpp
       GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
       //ABGameMode.ccp
       #include "ABCharacter.h"
@@ -533,7 +533,7 @@
       <details><summary>코드 보기</summary>
 
       ```c++
-      //ABCharater.h
+      //ABCharacter.h
       enum class EControlMode { GTA, DIABLO };
 
       void SetControlMode(EControlMode NewControlMode);
@@ -625,7 +625,7 @@
       private:
          void ViewChange();
 
-      //ABCharater.cpp
+      //ABCharacter.cpp
       AABCharacter::AABCharacter() {
          ...
       	ArmLengthSpeed = 3.0f;
@@ -731,7 +731,7 @@
 
 - ### <span style = "color:yellow;">점프 구현_1</span>
    - <img src="Image/Jump_Ani.gif" height="300" title="Jump_Ani">
-   - ACharater 클래스에는 Jump라는 멤버 함수가 있으며, 바인딩이 가능하다.
+   - ACharacter 클래스에는 Jump라는 멤버 함수가 있으며, 바인딩이 가능하다.
    - 높이의 조절을 원하는 경우 GetCharacterMovement로 가져와서 JumpZVelcity 값을 변경한다. (※기본 420)
    - 점프의 경우 속도가 포함되기 때문에 달리기 모션이 재생된다. 이를 블루프린트에서 구현한다.
    - 폰의 점프 상황을 보관하기 위해 IsInAir라는 boolean타입을 선언하고 IsFalling함수를 호출해 동기화한다.
@@ -1207,7 +1207,7 @@
       public:	
 	      virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
       
-      //ABCharater.cpp
+      //ABCharacter.cpp
       float AABCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
       {
          float FinalDamage = Super::TakeDamage(DamageAmount,DamageEvent,EventInstigator,DamageCauser);
@@ -1538,7 +1538,7 @@
       - CSV파일을 불러오기 위해서는 각 열의 이름과 유형이 동일한 구조체를 선언해야한다. 
          - FTableRowBase > FABCharacterData라는 구조체 헤더에 선언
          - USTRUCT, GENERATED_BODY 매크로 선언
-      - CSV파일(ABCharaterDate.csv)을 임포트 할때 데이터 테이블 행 타입을 ABCharacterData로 바꾸고 적용한다.
+      - CSV파일(ABCharacterDate.csv)을 임포트 할때 데이터 테이블 행 타입을 ABCharacterData로 바꾸고 적용한다.
 
          <details><summary>코드 보기</summary>
 
@@ -1547,12 +1547,12 @@
          #include "Engine/DataTable.h"
 
          USTRUCT(BlueprintType)
-         struct FABCharaterData : public FTableRowBase
+         struct FABCharacterData : public FTableRowBase
          {
             GENERATED_BODY()
 
          public:
-            FABCharaterData() : Level(1), MaxHP(100.0f), Attack(10.0f), DropExp(10), NextExp(30){}
+            FABCharacterData() : Level(1), MaxHP(100.0f), Attack(10.0f), DropExp(10), NextExp(30){}
 
             UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
             int32 Level;
@@ -1596,7 +1596,7 @@
 
          ```c++
          //ABGameInstance.h
-         FABCharaterData* GetABCharacterData(int32 Level);
+         FABCharacterData* GetABCharacterData(int32 Level);
 
          private:
             UPROPERTY()
@@ -1620,9 +1620,9 @@
             ABLOG(Warning, TEXT("DropExp of Level 20 ABCharacter : %d"),GetABCharacterData(20)->DropExp);
          }
 
-         FABCharaterData* UABGameInstance::GetABCharacterData(int32 Level)
+         FABCharacterData* UABGameInstance::GetABCharacterData(int32 Level)
          {
-            return ABCharacterTable->FindRow<FABCharaterData>(*FString::FromInt(Level),TEXT(""));
+            return ABCharacterTable->FindRow<FABCharacterData>(*FString::FromInt(Level),TEXT(""));
          }
          ```
 
@@ -1638,6 +1638,414 @@
 ## **06.04**
 > **<h3>Today Dev Story</h3>**
 - ### <span style = "color:yellow;">액터 컴포넌트 제작</span>
+   1. ### 액터 컴포넌트 클래스(ABCharacterStatComponent)를 생성하고 이를 ABCharacter에 부착해 스텟에 대한 관리를 추가한다.
+      - <img src="Image/CharacterStat.png" height="300" title="CharacterStat"> <img src="Image/Stat_Level.gif" height="300" title="Stat_Level">
+
+      - Tick로직이 필요없다. PostInitialzeComponenets 이전에 호출되는 InitializeComponent를 통하여 초기화 로직을 구현한다. (bWantsInitializeComponent 값을 True로 설정해주어야한다.) 
+      - 모든 스탯을 스탯 컴포넌트에서 관리하도록 변수를 모두 private으로 선언하고 레벨은 SetNewLevel을 통해서 변경할 수 있도록한다.
+      - 위의 사진을 보면 Level에 따라 CurrentHP값이 변동하는 것을 볼 수 있다.
+         
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABCharacter.h
+         UPROPERTY(VisibleAnywhere, Category=Stat)
+         class UABCharacterStatComponent *CharacterStat;
+
+         //ABCharacter.cpp
+         #include "ABCharacterStatComponent.h"
+         ...
+         CharacterStat = CreateDefaultSubobject<UABCharacterStatComponent>(TEXT("CHARACTERSTAT"));
+
+         //ABCharacterStatComponent.h
+         protected:
+            virtual void InitializeComponent() override;
+
+         public:	
+            void SetNewLevel(int32 NewLevel);
+         
+         private:
+            struct FABCharacterData* CurrentStatData = nullptr;
+         
+            UPROPERTY(EditInstanceOnly, Category=Stat, Meta=(AllowPrivateAccess = true))
+            int32 Level;
+         
+            UPROPERTY(Transient, VisibleInstanceOnly, Category=Stat, Meta=(AllowPrivateAccess = true))	//직렬화에서 제외 (게임 시작시마다 변경)
+            float CurrentHP;
+         };
+
+         //ABCharacterStatComponent.cpp
+         UABCharacterStatComponent::UABCharacterStatComponent()
+         {
+            PrimaryComponentTick.bCanEverTick = false;
+            bWantsInitializeComponent = true;
+
+            Level = 1;	//1로 초기화
+         }
+         ...
+         void UABCharacterStatComponent::InitializeComponent()
+         {
+            Super::InitializeComponent();
+            SetNewLevel(Level);	//초기화
+         }
+
+         void UABCharacterStatComponent::SetNewLevel(int32 NewLevel)
+         {
+            auto ABGameInstance = Cast<UABGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
+
+            ABCHECK(nullptr != ABGameInstance);
+            CurrentStatData = ABGameInstance->GetABCharacterData(NewLevel);
+            if(nullptr != CurrentStatData)
+            {
+               Level = NewLevel;
+               CurrentHP = CurrentStatData->MaxHP;
+            }
+            else
+            {
+               ABLOG(Error, TEXT("Level (%d) data doesn't exist"), NewLevel);
+            }
+         }
+         ```
+
+         </details>
+
+   2. ### 캐릭터가 대미지를 받으면 대미지 만큼 CurrentHP에서 차감하고 그 결과로 CurrentHP 값이 0보다 작으면 죽도록 기능을 추가한다.
+      - <img src="Image/Damage_Decrease.gif" height="300" title="Damage_Decrease">
+
+      - TakeDamage 함수에서 직접 처리했지만 ABCharacterStatComponent에 SetDamage함수를 생성하고 TakeDamage 함수에서 호출 후 처리한다.
+         - 액터 컴포넌트가 캐릭터에 의존성을 가지지 않도록 액터 컴포넌트에 델리게이트를 선언하고 바인딩하는 구조로 설계한다.
+         - 기존 ABCharacter에 존재하던 애니메이션 구조를 델리게이트와 연동하도록 바꾼다.
+      
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABCharacterStatComponent.h
+         DECLARE_MULTICAST_DELEGATE(FOnHPIsZeroDelegate);
+         ...
+         public:	
+            void SetDamage(float NewDamage);
+            float GetAttack();
+         
+         FOnHPIsZeroDelegate OnHpIsZero;
+         
+         //ABCharacterStatComponent.cpp
+         void UABCharacterStatComponent::SetDamage(float NewDamage)	//데미지를 받는다.
+         {
+            ABCHECK(nullptr != CurrentStatData);
+            CurrentHP = FMath::Clamp<float>(CurrentHP - NewDamage, 0.0f, CurrentStatData->MaxHP); //사이값이여야한다.
+            if(CurrentHP <= 0.0f)
+            {
+               OnHpIsZero.Broadcast();	//방송때려라
+            }
+         }
+         float UABCharacterStatComponent::GetAttack()	//데미지를 준다.
+         {
+            ABCHECK(nullptr != CurrentStatData, 0.0f);
+            return CurrentStatData->Attack;
+         }
+         
+         //ABCaracter.cpp
+         void AABCharacter::PostInitializeComponents()
+         {
+            ...
+            CharacterStat->OnHpIsZero.AddLambda([this]() -> void
+            {
+               ABLOG(Warning, TEXT("OnHpIsZero"));
+               ABAnim->SetDeadAnim();
+               SetActorEnableCollision(false);
+            });
+         }
+         ...
+         float AABCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+         {
+            ....
+            CharacterStat->SetDamage(FinalDamage);
+            return FinalDamage;
+         }
+         ...
+         void AABCharacter::AttackCheck()
+         {
+            ...
+            if(bReslut)
+            {
+               if(HitResult.Actor.IsValid())
+               {
+                  ABLOG(Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+
+                  FDamageEvent DamageEnvent;
+                  HitResult.Actor->TakeDamage(CharacterStat->GetAttack(), DamageEnvent, GetController(), this);
+               }
+            }
+         }
+         ```
+
+         </details>
+   
+- ### 캐릭터 위젯 UI제작
+   - <img src="Image/UI_HPBar.png" height="300" title="UI_HPBar">
+   - HP값이 시각적으로 보이도록 UI위젯을 제작후 캐릭터에 부착한다. -> UI폴더를 만들고 위젯 블루프린트(UI_HPBar)를 생성한다.
+      - 작게 프로그레스바를 생성할 것임으로 Fill Screen이 아닌 Custom(150*50)으로 바꾼다. 또한 같은 이유로 Canvas를 제거하고 일반/Progress Bar를 지어준다.
+      - PB_HPBar라고 이름을 지어준후 Vertical Box로 감싸준다.
+      - 프리미티브/Spacer 컨트롤을 첫 번째와 세 번째에 추가하고 size를 40씩 채워준다.
+
+- ### 모듈과 빌드 설정
+   - <img src="Image/HP_UI.png" height="300" title="HP_UI">
+   - UI를 캐릭터에 부착하기 위해 UWidgetComponent라는 클래스를 제공한다.
+   - 초기 그냥 컴파일을 하면 "알 수 없는 외부참조"라는 오류가 발생하는데 현재 프로젝트에 UI관련 모듈을 지정하지 않았기 때문이다.
+      - <img src="Image/Buildcs.png" height="200" title="Buildcs">
+      - Arena.Build.cs에서 확인할 수 있으며, 위 사진과 같이 "UMG"를 추가해주어야 사용할 수 있다.
+   - UMG 모듈의 Public/Components 폴더에는 현재 사용중인 WidgetComponent.h 파일이 있는데 이 파일을 추가해 컴포넌트를 생성하는 코드를 생성한다.
+   - 위젯은 캐릭터 머리 위로 오도록 하고 위젯 블루프린트 애셋의 레퍼런스를 사용해 클래스 정보를 컴포넌트의 WidgetClass로 등록한다.
+   - 또한 플레이어를 향해 보도록 Screen모드로 지정하고 크기는 150 * 50으로 지정한다.
+      
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacter.h
+      UPROPERTY(VisibleAnywhere, Category=UI)
+	   class UWidgetComponent* HPBarWidget;
+
+      //ABCharacter.cpp
+      #include "Components/WidgetComponent.h"
+      ...
+      AABCharacter::AABCharacter()
+      {
+         ...
+      	HPBarWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("HPBARWIDGET"));
+         ...
+      	HPBarWidget->SetupAttachment(GetMesh());
+         ...
+         HPBarWidget->SetRelativeLocation(FVector(0.0f,0.0f,180.0f));
+         HPBarWidget->SetWidgetSpace(EWidgetSpace::Screen);	//스크린 모드
+         
+         static ConstructorHelpers::FClassFinder<UUserWidget>
+         UI_HUD(TEXT("/Game/Book/UI/UI_HPBar.UI_HPBar_C"));
+         if(UI_HUD.Succeeded())
+         {
+            HPBarWidget->SetWidgetClass(UI_HUD.Class);
+            HPBarWidget->SetDrawSize(FVector2D(150.0f,50.0f));
+         }
+      }
+      ```
+
+      </details>
+
+- ### UI와 데이터 연동
+   - <img src="Image/HPBar_End.gif" height="300" title="HPBar_End">
+   - UI의 로직은 c++클래스(UserWidget)에서 미리 만들어 제공할 수 있다. 이를 상속받는 ABCharacterWidget을 생성한다.
+   - 해당 클래스는 정보가 저장되어 있는 ABCharacterStatComponent와 연동해 스텟이 변동할때마다 HP바를 업데이트한다. (델리게이트 사용)
+   - 앞의 위젯 블루프린트를 ABCharacterWidget을 상속받도록한다.
+   
+      <details><summary>코드 보기(ABCharacterStatComponent)</summary>
+
+      ```c++
+      //ABCharacterStatComponent.h
+      DECLARE_MULTICAST_DELEGATE(FOnHpChangedDelegate);
+      public:	
+         ...
+         void SetHP(float NewHP);
+         ...
+         float GetHPRatio();
+         ...
+         FOnHpChangedDelegate OnHpChanged;
+      //ABCharacterStatComponent.cpp
+      void UABCharacterStatComponent::SetNewLevel(int32 NewLevel)
+      {
+         ...
+         if(nullptr != CurrentStatData)
+         {
+            Level = NewLevel;
+            SetHP(CurrentStatData->MaxHP);
+         }
+         ...
+      }
+
+      void UABCharacterStatComponent::SetDamage(float NewDamage)	//데미지를 받는다.
+      {
+         ABCHECK(nullptr != CurrentStatData);
+         SetHP(FMath::Clamp<float>(CurrentHP - NewDamage, 0.0f, CurrentStatData->MaxHP));
+      }
+
+      void UABCharacterStatComponent::SetHP(float NewHP)
+      {
+         CurrentHP = NewHP;
+         OnHpChanged.Broadcast();
+         if(CurrentHP < KINDA_SMALL_NUMBER)
+         {
+            CurrentHP = 0.0f;
+            OnHpIsZero.Broadcast();
+         }
+      }
+
+      float UABCharacterStatComponent::GetHPRatio()	//체력 비율을 리턴
+      {
+         ABCHECK(nullptr != CurrentStatData, 0.0f);
+         return (CurrentStatData->MaxHP < KINDA_SMALL_NUMBER) ? 0.0f : (CurrentHP / CurrentStatData->MaxHP);
+      }
+      ```
+
+      </details>
+
+   - <img src="Image/Ratio_HP.png" height="200" title="Ratio_HP">
+   -  UI에서 캐릭터 컴포넌트에 연결하는 과정. 약 포인터(TWeakObjectPtr)를 사용해 참조하였다. (공부용)
+      - UI와 캐릭터가 다른 액터라면 약 포인터를 사용할 것
+   - 연결 후 코드에서 PB_HPBar라는 이름의 위젯을 검색하고 속성을 업데이트하는 로직을 구현한다.
+      - 이때 UI가 초기화되는 시점을 고려해야하는데 UI시스템은 준비되면 NativeConstruct 함수가 호출된다. 여기에 로직을 구현한다.
+
+      <details><summary>코드 보기(ABCharacterWidget)</summary>
+
+      ```c++
+      //ABCharacterWidget.h
+      public:
+         void BindCharacterStat(class UABCharacterStatComponent* NewCharacterStat);
+
+      protected:
+         virtual void NativeConstruct() override;
+         void UpdateHPWidget();
+
+      private:
+         TWeakObjectPtr<class UABCharacterStatComponent> CurrentCharacterStat;
+
+         UPROPERTY()
+         class UProgressBar* HPProgressBar;
+
+      //ABCharacterWidget.cpp
+      #include "Components/ProgressBar.h"
+
+      void UABCharacterWidget::BindCharacterStat(UABCharacterStatComponent* NewCharacterStat)
+      {
+         ABCHECK(nullptr != NewCharacterStat);
+
+         CurrentCharacterStat = NewCharacterStat;
+         
+         NewCharacterStat->OnHpChanged.AddUObject(this, &UABCharacterWidget::UpdateHPWidget);
+      }
+
+      void UABCharacterWidget::NativeConstruct()
+      {
+         Super::NativeConstruct();
+         HPProgressBar = Cast<UProgressBar>(GetWidgetFromName(TEXT("PB_HPBar")));
+         ABCHECK(nullptr != HPProgressBar);
+         UpdateHPWidget();
+      }
+
+      void UABCharacterWidget::UpdateHPWidget()	//HP가 드러나는 부분
+      {
+         if(CurrentCharacterStat.IsValid())
+         {
+            if(nullptr != HPProgressBar)
+            {
+               HPProgressBar->SetPercent(CurrentCharacterStat->GetHPRatio());
+            }
+         }
+      }
+      //ABCharacter.cpp
+      
+      #include "ABCharacterWidget.h"
+      void AABCharacter::BeginPlay()
+      {
+         Super::BeginPlay();
+         
+         auto CharacterWidget = Cast<UABCharacterWidget>(HPBarWidget->GetUserWidgetObject());
+         if(nullptr != CharacterWidget)
+         {
+            CharacterWidget->BindCharacterStat(CharacterStat);
+         }
+      }
+      ```
+
+      </details>
+
+- ### AIController와 내비게이션 시스템
+   - <img src="Image/AI_Move.gif" height="300" title="AI_Move">
+   - 비헤이비어 트리모델을 사용해 인공지능을 설계하고, 플레이어가 아닌 인공지능에 의해 스스로 정찰하고 플레이어를 쫓아와 공격하는 NPC를 제작한다.
+   - 인공지능(AI)로 NPC를 제어하도록 AI컨트롤러를 제공한다. (폰도 빙의가 가능하다.)
+   - 레벨에 배치된 캐릭터가 스스로 움직일 수 있도록 AI컨트롤러를 생성해 캐릭터에게 부여해본다. (AIController를 부모로 하는 ABAIController클래스 생성)
+      - ABCharacter에 ABAIController.h를 추가. AI 생성 옵션을 PlaceInWorldOrSpawned로 설정 -> 플레이어를 죄외한 모든 캐릭터에 빙의
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      #include "ABAIController.h"
+      AABCharacter::AABCharacter()
+      {
+         ...
+      	AIControllerClass = AABAIController::StaticClass();
+         AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+      }
+      ```
+
+      </details>
+
+   - <img src="Image/NavMesh_Bounds_Volume.png" height="300" title="NavMesh_Bounds_Volume">
+   - NPC는 스스로 움직여야하기 때문에 '내비게이션 메시'기반인 길 찾기 시스템을 사용해야한다.
+      - 레벨에 내비게이션 메시를 배치해 NPC가 스스로 움직일 수 있는 환경을 구축해야 한다.
+   - 모드/볼륨의 탭에서 Navmesh Bounds Volume을 배치하고 Brush Settings의 크기를 (10000 X 10000 X 500cm)으로 설정한다.
+   - 이 내비메시영역을 활용해 ABAIController에 빙의한 폰에게 목적지를 알려줘 스스로 움직이도록 명령을 추가한다.
+      - AI컨트롤에 타이머를 설치해 3초마다 폰에게 목적지로 이동하는 명령을 내린다.
+      - 목적지를 랜덤으로 가져오는 함수 GetRandomPointInNavigableRadius, 목적지로 폰을 이동시키는 SimpleMoveToLocation함수를 제공한다.
+      - ArenaBattle.Build.cs의 AddRange에 "NavigationSystem"를 추가해준다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABAIController.h
+      public:
+         AABAIController();
+         virtual void OnPossess(APawn* InPawn) override;
+         virtual void OnUnPossess() override;
+
+      private:
+         void OnRepeatTimer();
+
+         FTimerHandle RepeatTimeHandle;
+         float RepeatInterval;
+
+      //ABAIController.cpp
+      #include "ABAIController.h"
+      #include "NavigationSystem.h"
+      #include "Blueprint/AIBlueprintHelperLibrary.h"
+
+      AABAIController::AABAIController()
+      {
+         RepeatInterval = 3.0f;
+      }
+
+      void AABAIController::OnPossess(APawn* InPawn)
+      {
+         Super::OnPossess(InPawn);
+         GetWorld()->GetTimerManager().SetTimer(RepeatTimeHandle, this, &AABAIController::OnRepeatTimer, RepeatInterval, true);
+      }
+
+      void AABAIController::OnUnPossess()
+      {
+         Super::OnUnPossess();
+         GetWorld()->GetTimerManager().ClearTimer(RepeatTimeHandle);
+      }
+
+      void AABAIController::OnRepeatTimer()
+      {
+         auto CurrentPawn = GetPawn();
+         ABCHECK(nullptr != CurrentPawn);
+
+         UNavigationSystemV1* NavSystem = UNavigationSystemV1::GetNavigationSystem(GetWorld());
+         if(nullptr == NavSystem) return;
+
+         FNavLocation NextLocation;
+         if(NavSystem->GetRandomPointInNavigableRadius(FVector::ZeroVector, 500.0f, NextLocation))
+         {
+            UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, NextLocation.Location);
+            ABLOG(Warning, TEXT("Next Location : %s"), *NextLocation.Location.ToString());
+         }
+      }
+      ```
+
+      </details>
 
 > **<h3>Realization</h3>**
-- null
+- 언리얼 오브젝트에는 직렬화 기능이 있어서 UPROERTY 속성을 저장하고 로딩할 수 있다.
+   - UPROERTY(Transient)는 직렬화를 사용하지 않는다는 것
+
+- float와 값을 비교할때 미세한 오차 범위 내에 있는지를 판단하는 것이 좋은데 무시 가능한 오차를 측정할때 KINDA_SMALL_NUMBER를 사용한다.
+- 4.21버전부터 위젯의 초기화 시점이 BeginPlay로 바뀌었다.
+- 비헤이비어 트리(Behavior Tree)모델을 사용하여 인공지능을 설계할 수 있다.

@@ -8,12 +8,12 @@
 #include "ABGameInstance.generated.h"
 
 USTRUCT(BlueprintType)
-struct FABCharaterData : public FTableRowBase
+struct FABCharacterData : public FTableRowBase
 {
 	GENERATED_BODY()
 
 public:
-	FABCharaterData() : Level(1), MaxHP(100.0f), Attack(10.0f), DropExp(10), NextExp(30){}
+	FABCharacterData() : Level(1), MaxHP(100.0f), Attack(10.0f), DropExp(10), NextExp(30){}
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
 	int32 Level;
@@ -40,7 +40,7 @@ public:
 	UABGameInstance();
 
 	virtual void Init() override;
-	FABCharaterData* GetABCharacterData(int32 Level);
+	FABCharacterData* GetABCharacterData(int32 Level);
 
 private:
 	UPROPERTY()
