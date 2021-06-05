@@ -2049,3 +2049,318 @@
 - float와 값을 비교할때 미세한 오차 범위 내에 있는지를 판단하는 것이 좋은데 무시 가능한 오차를 측정할때 KINDA_SMALL_NUMBER를 사용한다.
 - 4.21버전부터 위젯의 초기화 시점이 BeginPlay로 바뀌었다.
 - 비헤이비어 트리(Behavior Tree)모델을 사용하여 인공지능을 설계할 수 있다.
+- ArenaBattle.Build.cs의 AddRange에 "NavigationSystem"를 추가해주어야 네비게이션을 사용할 수 있다.
+- ArenaBattle.Build.cs의 AddRange에 "CMG"를 추가해주어야 UI블루프린트를 사용할 수 있다.
+
+## **06.05**
+> **<h3>Today Dev Story</h3>**
+- ### 비헤이비터 트리 시스템
+   1. Behaviour 트리를 통한 로직 구현
+      - <img src="Image/Behaviour.JPG" height="300" title="Behaviour">
+      - NPC가 해야할 행동을 분석하고 우선순위가 높은 행동부터 NPC가 실행할 수 있도록 트리 구조로 성계하는 기법이다. (블랙보드 애셋이 필요하다.)
+      - 비헤이비어 트리에 Task/Wait(일정기간 동안 대기) 태스크를 하나 생성한다.
+         - 태스크들이 False 결과가 나올 때까지 좌우로 태스크를 실행하는 시퀀스 컴포짓을 선택해 추가한다.
+         - ArenaBattle.Build.cs의 AddRange에 "AIModule"를 추가해주어야 비헤이비어 트리를 사용할 수 있다.
+      - 기존 ABAIController 클래스의 모든 코드를 비헤이비어 트리 구동에 맞게 수정한다.
+         - OnUnPossess(), OnRepeatTimer(), RepeatTimeHandle, RepeatInterval, NavigationSystem.h 삭제
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABAIContorller.h
+         public:
+            AABAIController();
+            virtual void OnPossess(APawn* InPawn) override;
+
+         private:
+            UPROPERTY()
+            class UBehaviorTree* BTAsset;
+
+            UPROPERTY()
+            class UBlackboardData* BBAsset;
+         
+         //ABAIContorller.cpp
+         #include "ABAIController.h"
+         #include "BehaviorTree/BehaviorTree.h"
+         #include "BehaviorTree/BlackboardData.h"
+
+         AABAIController::AABAIController()
+         {
+            static ConstructorHelpers::FObjectFinder<UBlackboardData>
+            BBObject(TEXT("/Game/Book/AI/BB_ABCharacter.BB_ABCharacter"));
+            if(BBObject.Succeeded())
+            {
+               BBAsset = BBObject.Object;
+            }
+
+            static ConstructorHelpers::FObjectFinder<UBehaviorTree>
+            BTObject(TEXT("/Game/Book/AI/BT_ABCharacter.BT_ABCharacter"));
+            if(BTObject.Succeeded())
+            {
+               BTAsset = BTObject.Object;
+            }
+         }
+
+         void AABAIController::OnPossess(APawn* InPawn)
+         {
+            Super::OnPossess(InPawn);
+            if(UseBlackboard(BBAsset,Blackboard))
+            {
+               if(!RunBehaviorTree(BTAsset))
+               {
+                  ABLOG(Error,TEXT("AIController couldn't run behavior tree!"));
+               }
+            }
+         }
+         ```
+
+         </details>
+
+   2. Behaviour 트리를 통한 NPC 임의위치 순찰기능 구현
+      - <img src="Image/Auto_Move.gif" height="300" title="Auto_Move">
+      - 블랙보드에 순찰기능에 필요한 초기 NPC 생성위치를 저장 정보와 순찰한 위치 정보를 보관할 Vector 타입의 키를 선언 (HomePos,PartolPos) 
+      - 트리 구동 전에 AIController에서 HomePos키 값을 지정 하도록 구현. FName 속성을 추가하고 할당
+      - 순찰 PatrolPos 데이터는 순찰 할때마다 바뀌므로 태스크를 제작해 설계한다. (BTTaskMode를 상속받는 BTTask_FindPatrolPos)
+         - ArenaBattle.Build.cs의 AddRange에 "GamePlayTasks"를 추가해주어야 비헤이비어 트리 에디터를 사용할 수 있다.(?)
+         - Aborted : 중단, Failed : 실패, Succeeded : 성공, InProgress : 수행중 값들 중 하나를 반환한다.
+      - Wait 태스크 오른쪽에 FindPatrolPos(방금 만든 c++ 파일)를 배치하고 MoveTo 태스크를 추가해 배치한다.
+            
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABAIContorller.h
+         public:
+            static const FName HomePosKey;
+            static const FName PatrolPosKey;
+         
+         //ABAIContorller.cpp
+         #include "BehaviorTree/BlackboardComponent.h"
+         const FName AABAIController::HomePosKey(TEXT("HomePos"));
+         const FName AABAIController::PatrolPosKey(TEXT("PatrolPos"));
+         ...
+         void AABAIController::OnPossess(APawn* InPawn)
+         {
+            Super::OnPossess(InPawn);
+            if(UseBlackboard(BBAsset,Blackboard))
+            {
+               Blackboard->SetValueAsVector(HomePosKey, InPawn->GetActorLocation());	//Location을 HomePosKey에..
+               if(!RunBehaviorTree(BTAsset))
+               {
+                  ABLOG(Error,TEXT("AIController couldn't run behavior tree!"));
+               }
+            }
+         }
+         //BTTask_FindPatrolPos.h
+         public:
+            UBTTask_FindPatrolPos();
+            virtual  EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+
+         //BTTask_FindPatrolPos.cpp
+         #include "BTTask_FindPatrolPos.h"
+         #include "ABAIController.h"
+         #include "NavigationSystem.h"
+         #include "BehaviorTree/BlackboardComponent.h"
+         #include "NavigationSystem.h"
+
+         UBTTask_FindPatrolPos::UBTTask_FindPatrolPos()
+         {
+            NodeName = TEXT("FindPatrolPos");
+         }
+
+         EBTNodeResult::Type UBTTask_FindPatrolPos::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+         {
+            EBTNodeResult::Type Result = Super::ExecuteTask(OwnerComp, NodeMemory);
+
+            auto ControllingPawn = OwnerComp.GetAIOwner()->GetPawn();
+            if(nullptr == ControllingPawn)
+               return EBTNodeResult::Failed;
+
+            UNavigationSystemV1* NavSystem = UNavigationSystemV1::GetNavigationSystem(ControllingPawn->GetWorld());
+            if(nullptr == NavSystem)
+               return EBTNodeResult::Failed;
+
+            FVector Origin = OwnerComp.GetBlackboardComponent()->GetValueAsVector(AABAIController::HomePosKey);
+            FNavLocation NextPatrol;
+
+            if(NavSystem->GetRandomPointInNavigableRadius(Origin, 500.0f,NextPatrol))
+            {
+               OwnerComp.GetBlackboardComponent()->SetValueAsVector(AABAIController::PatrolPosKey,NextPatrol.Location);
+               return EBTNodeResult::Succeeded;
+            }
+
+            return EBTNodeResult::Failed;
+            
+         }
+         ```
+
+         </details>
+
+- ### NPC의 추격 기능
+   
+   1. 정찰 중 플레이어가 1초마다 일정 반경(6미터) 내의 캐릭터를 탐지
+      - <img src="Image/Detect_Service.gif" height="300" title="Detect_Service">
+      - 플레이어를 발견할때 플레이어의 정보를 블랙보드에 저장하도록 Object 타입으로 Target 변수를 생성한다. (Object 기반은 ABCharacter로 지정)
+      - NPC의 행동 패턴은 플레이어의 발견여부에 구분되므로 셀렉터 컴포짓을 통해 로직을 확장한다. 정찰 < 추격(Target을 향해 이동하도록 설계)
+      - 이를 위해 서비스 노드를 제공하는데 독립적으로 동작하지 않고 컴포짓 노드에 부착되는 노드이다. 또한 해당 컴포짓에 속한 태스크들이 실행되는 동안 반복적인 작업을 실행하는데 적합하다. 
+         - BTService를 부모로 하는 BTService_Detect 클래스를 생성, 서비스 노드가 속한 컴포짓 노드가 활성화되는 경우 TickNode함수를 호출한다. (주기는 Interval속성으로 지정)
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //BTService_Detect.h
+         public:
+            UBTService_Detect();
+
+         protected:
+            virtual  void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
+
+         //BTService_Detect.cpp
+         #include "BTService_Detect.h"
+         #include "ABAIController.h"
+         #include "ABCharacter.h"
+         #include "BehaviorTree/BlackboardComponent.h"
+         #include "DrawDebugHelpers.h"
+
+         UBTService_Detect::UBTService_Detect()
+         {
+            NodeName = TEXT("Detect");
+            Interval = 1.0f; //주기
+         }
+
+         void UBTService_Detect::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+         {
+            Super::TickNode(OwnerComp, NodeMemory, DeltaSeconds);
+
+            APawn* ControllingPawn = OwnerComp.GetAIOwner()->GetPawn();
+            if(nullptr == ControllingPawn) return;
+
+            UWorld* World = ControllingPawn->GetWorld();
+            FVector Center = ControllingPawn->GetActorLocation();
+            float DetectRadius = 600.0f;	//범위
+
+            if(nullptr == World) return;
+            TArray<FOverlapResult> OverlapResults;
+            FCollisionQueryParams CollisionQueryParams(NAME_None,false,ControllingPawn);
+
+            //반경내의 모든 캐릭터를 탐지한다.
+            bool bResult = World->OverlapMultiByChannel(
+               OverlapResults,
+               Center,
+               FQuat::Identity,
+               ECollisionChannel::ECC_GameTraceChannel2,
+               FCollisionShape::MakeSphere(DetectRadius),
+               CollisionQueryParams
+            );
+
+            DrawDebugSphere(World,Center,DetectRadius, 16, FColor::Red,false,0.2f);
+         }
+         ```
+
+         </details>
+
+   2. 감지되는 대상 중 주인공 캐릭터를 추려내는 기능과 추격 기능 추가
+      - <img src="Image/AI_Follow.gif" height="300" title="AI_Follow">
+      - 캐릭터를 조정하는 컨트롤러가 플레이어 컨트롤러인지 파악하도록 IsPlayerController 함수 사용
+      - 탐지되면 녹색 구체를 그리고, 연결된 선을 그린다. 또한 Target 값을 플레이어로 지정하고 그렇지 않다면 nullptr로 지정한다. 
+      - <img src="Image/Queck_Follow.png" height="300" title="Queck_Follow">
+         
+         - 탐색시 바로 시퀀스를 종료하고 추격하는 시퀀스를 하도록 설정 (Target, NoTarget) -> Target 값의 여부에 따라
+         
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABAIController.h
+         static const FName TargetKey;
+         //ABAIController.cpp
+         const FName AABAIController::TargetKey(TEXT("Target"));
+         //BTService_Detect.cpp
+         //탐지되면 선을 그린다
+         void UBTService_Detect::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+         {
+            ...
+            if(bResult)
+            {
+               for (auto OverlapResult : OverlapResults)
+               {
+                  AABCharacter* ABCharacter = Cast<AABCharacter>(OverlapResult.GetActor());
+                  if(ABCharacter && ABCharacter->GetController()->IsPlayerController()) 
+                  {
+                     OwnerComp.GetBlackboardComponent()->SetValueAsObject(AABAIController::TargetKey, ABCharacter);
+                     DrawDebugSphere(World, Center, DetectRadius,16, FColor::Green, false, 0.2f);
+                     
+                     DrawDebugPoint(World, ABCharacter->GetActorLocation(),10.0f, FColor::Blue, false, 0.2f);
+                     DrawDebugLine(World, ControllingPawn->GetActorLocation(),ABCharacter->GetActorLocation(), FColor::Blue,false, 0.2f);
+                     return;
+                  }
+               }
+            }
+            else
+            {
+               OwnerComp.GetBlackboardComponent()->SetValueAsObject(AABAIController::TargetKey, nullptr);
+            }
+            
+            DrawDebugSphere(World,Center,DetectRadius, 16, FColor::Red,false,0.2f);
+         }
+         ```
+
+         </details>
+
+   3. NPC의 자연스러운 회전과 최대 이동 속도 수정
+      - <img src="Image/Finish_AI.gif" height="300" title="Finish_AI">
+      - NPC를 위한 ControlMode를 추가하고 이동방향에 따라 회전하도록 무브먼트 설정을 변경한다.
+      - PossessedBy에서 플레이어가 컨트롤하는 건지 여부에 따라서 이동 속도 또한 낮게 설정해 도망갈 수 있도록 구현한다. 
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABCharacter.h
+         enum class EControlMode { GTA, DIABLO, NPC };
+         ...
+         virtual void PossessedBy(AController* NewController) override;
+         
+         //ABCharacter.cpp
+         void AABCharacter::SetControlMode(EControlMode NewControlMode)
+         {
+            CurrentControlMode = NewControlMode;
+            switch (CurrentControlMode)
+            {
+               case EControlMode::NPC:
+            bUseControllerRotationYaw = false;
+            GetCharacterMovement()->bUseControllerDesiredRotation = false;
+            GetCharacterMovement()->bOrientRotationToMovement = true;
+            GetCharacterMovement()->RotationRate = FRotator(0.0f, 480.0f, 0.0f);
+            break;
+            }
+            ...
+         }
+         ...
+         void AABCharacter::PossessedBy(AController* NewController)  //속도 조정
+         {
+            Super::PossessedBy(NewController);
+
+            if(IsPlayerControlled())
+            {
+               SetControlMode(EControlMode::DIABLO);
+               GetCharacterMovement()->MaxWalkSpeed = 600.0f;
+            }
+            else
+            {
+               SetControlMode(EControlMode::NPC);
+               GetCharacterMovement()->MaxWalkSpeed = 300.0f;
+            }
+         }
+         ```
+
+         </details>
+
+> **<h3>Realization</h3>**
+- 비헤이비어 트리 : 블랙보드 데이터에 기반해 설계한 비헤이비어 트리의 정보가 저장 (시각화)
+   - 태스크 : 명령// 독립적으로 실행되지 않고 컴포짓(Composite)노드를 거쳐 실행된다.
+   - 컴포짓 노드에는 셀렉터와 시퀀스가 있다. //시퀀스는 실패할때까지 계속 실행한다.
+- 블랙보드 : 인공지능의 판단에 사용하는 데이터 집합
+- ArenaBattle.Build.cs의 AddRange에 "AIModule"를 추가해주어야 비헤이비어 트리를 사용할 수 있다.
+- ArenaBattle.Build.cs의 AddRange에 "GamePlayTasks"를 추가해주어야 비헤이비어 트리 에디터를 사용할 수 있다.(?)
+   - 테스크를 실행할때 ExecuteTask라는 함수를 실행하는 넷 중하나의 값을 반환해야한다. 이 결과에 따라 다음 태스크를 결정한다.
+      - Aborted : 중단, Failed : 실패, Succeeded : 성공, InProgress : 수행중
+- 서비스 노드가 속한 컴포짓 노드가 활성화되는 경우 TickNode함수를 호출한다. (주기는 Interval속성으로 지정)
+- 앞에 BT~_로 시작하는 C++는 비헤이비어 트리에서 자동으로 호출가능하다.
