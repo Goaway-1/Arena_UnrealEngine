@@ -2364,3 +2364,202 @@
       - Aborted : 중단, Failed : 실패, Succeeded : 성공, InProgress : 수행중
 - 서비스 노드가 속한 컴포짓 노드가 활성화되는 경우 TickNode함수를 호출한다. (주기는 Interval속성으로 지정)
 - 앞에 BT~_로 시작하는 C++는 비헤이비어 트리에서 자동으로 호출가능하다.
+
+## **06.06**
+> **<h3>Today Dev Story</h3>**
+- ### NPC의 공격
+   1. NPC의 추격후 공격 대신 1.5초간 정지
+      - <img src="Image/IsInAttackRange.gif" height="300" title="IsInAttackRange">
+      - 거리에 따라 추격이나 공격으로 분기하기에 기존 비헤이비어 트리의 왼쪽 로직을 두 갈래로 확장한다.
+      - 블랙보드의 값을 사용하지 않고 목표물인 플레이어가 공격 범위 내에 있는지 데코레이터를 생성한다. 
+         - BTDecorator를 상속받는 BTDecorator_IsInAttackRange를 생성하며 CalculateRawConditionValue 함수를 상속받아 조건 달성여부를 파악한다.
+         - 비헤이비어 트리를 위 그림과 같이 수정한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //BTDecorator_IsInAttackRange.h
+         public:
+            UBTDecorator_IsInAttackRange();
+
+         protected:
+            virtual bool CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const override;
+         
+         //BTDecorator_IsInAttackRange.cpp
+         #include "BTDecorator_IsInAttackRange.h"
+         #include "ABAIController.h"
+         #include "ABCharacter.h"
+         #include "BehaviorTree/BlackboardComponent.h"
+
+         UBTDecorator_IsInAttackRange::UBTDecorator_IsInAttackRange()
+         {
+            NodeName = TEXT("CanAttack");	//데코레이터의 이름이 된다.
+         }
+
+         bool UBTDecorator_IsInAttackRange::CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const
+         {
+            bool bResult = Super::CalculateRawConditionValue(OwnerComp, NodeMemory);
+
+            auto ControllingPawn = OwnerComp.GetAIOwner()->GetPawn();
+            if(nullptr == ControllingPawn)	return false;
+
+            auto Target = Cast<AABCharacter>(OwnerComp.GetBlackboardComponent()->GetValueAsObject(AABAIController::TargetKey));
+            if(nullptr == Target) return false;
+
+            bResult = (Target->GetDistanceTo(ControllingPawn) <= 200.0f);
+            return bResult;
+         }
+         ```
+
+         </details>
+
+   2. 대기가 아닌 공격의 구현
+      - <img src="Image/IsInAttack.gif" height="300" title="IsInAttack">
+      - BTTaskNode를 부모로 하는 BTTask_Attack이라는 클래스를 생성하고, FinishLatentTask 함수를 사용한다. -> Tick 사용
+         - 이 공격 태스크는 애니메이션이 끝날때까지 대기해야하는 지연 태스크임으로 ExecuteTask를 Inprogess로 반환하고 끝날 시 알려줘야한다.
+      - AI컨트롤러에서도 공격 명령을 내릴 수 있도록 ABCharater 클래스의 Attack함수를 public으로 변경하고 델리게이트를 새로 선언한다. 공격이 종료될 때 이를 호출한다.
+      - 태스크에서 람다 함수를 해당 델리게이트에 등록하고 Tick 함수 로직에서 이를 파악해 FinishLatentTask함수를 호출하여 태스크를 종료한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //BTTask_Attack.h
+         public:
+            UBTTask_Attack();
+
+            virtual  EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+
+         protected:
+            virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
+         
+         private:
+            bool IsAttacking = false;
+            
+         //BTTask_Attack.cpp
+         #include "BTTask_Attack.h"
+         #include "ABAIController.h"
+         #include "ABCharacter.h"
+
+         UBTTask_Attack::UBTTask_Attack()
+         {
+            bNotifyTick = true;	//tick 사용
+            IsAttacking = false;
+         }
+
+         EBTNodeResult::Type UBTTask_Attack::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+         {
+            Super::ExecuteTask(OwnerComp, NodeMemory);
+
+            auto ABCharacter = Cast<AABCharacter>(OwnerComp.GetAIOwner()->GetPawn());
+            if(nullptr == ABCharacter) return EBTNodeResult::Failed;
+
+            ABCharacter->Attack();
+            IsAttacking = true;
+            ABCharacter->OnAttackEnd.AddLambda([this]()-> void
+            {
+               IsAttacking = false;
+            });
+            
+            return EBTNodeResult::InProgress;
+         }
+
+         void UBTTask_Attack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+         {
+            Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
+            if(!IsAttacking)
+            {
+               FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+            }
+         }
+         //ABCHaracter.h
+         DECLARE_MULTICAST_DELEGATE(FOnAttackEndDelegate);
+         ...
+         public:
+            void Attack();
+            FOnAttackEndDelegate OnAttackEnd;
+         //ABCHaracter.cpp
+         void AABCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+         {
+            ABCHECK(IsAttacking);
+            ABCHECK(CurrentCombo > 0);
+            IsAttacking = false;
+            AttackEndComboState();
+            OnAttackEnd.Broadcast();
+         }
+         ```
+
+         </details>
+   3. 플레이어를 향해 회전하는 기능 추가
+      - <img src="Image/Attack.gif" height="300" title="Attack">
+      -위 사진을 보면 회전에 있어 오류가 있기에 BTTaskNode를 부모로 하는 BTTask_TurnToTarget이라는 태스크를 생성하고 FMath::RInterpTo 함수를 사용한다.
+
+         <details><summary>코드 보기</summary> 
+           
+         ```c++
+         //BTTask_TurnToTarget.h
+         public:
+            UBTTask_TurnToTarget();
+            virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+         //BTTask_TurnToTarget.cpp
+         #include "BTTask_TurnToTarget.h"
+         #include "ABAIController.h"
+         #include "ABCharacter.h"
+         #include "BehaviorTree/BlackboardComponent.h"
+
+         UBTTask_TurnToTarget::UBTTask_TurnToTarget()
+         {
+            NodeName = TEXT("Turn");
+         }
+
+         EBTNodeResult::Type UBTTask_TurnToTarget::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+         {
+            Super::ExecuteTask(OwnerComp, NodeMemory);
+
+            auto ABCharacter = Cast<AABCharacter>(OwnerComp.GetAIOwner()->GetPawn());
+            if(nullptr == ABCharacter) return EBTNodeResult::Failed;
+
+            auto Target = Cast<AABCharacter>(OwnerComp.GetBlackboardComponent()->GetValueAsObject(AABAIController::TargetKey));
+            if(nullptr == Target) return EBTNodeResult::Failed;
+
+            FVector LookVector = Target->GetActorLocation() - ABCharacter->GetActorLocation();
+            LookVector.Z = 0.0f;
+            FRotator TargetRot = FRotationMatrix::MakeFromX(LookVector).Rotator();
+            ABCharacter->SetActorRotation(FMath::RInterpTo(ABCharacter->GetActorRotation(), TargetRot, GetWorld()->GetDeltaSeconds(),2.0f));
+
+            return EBTNodeResult::Succeeded;
+         }
+         ```
+
+         </details>
+   
+- ### 프로젝트의 정리와 모듈의 추가
+   - 헤더파일은 모두 Public 폴더로 C++파일은 모두 Private 폴더로 옮겨주었다.
+   - 언리얼엔진은 게임 모듈을 사용해 게임 프로젝트의 로직을 관리한다. 지금까지는 Arena라는 주 게임 모듈에서 관리했다. 다른 모듈을 게임을 프로젝트에 추가하려면 로직을 분리해야한다.
+      - 기존 제공받은 ArenaBattleSetting파일을 Source에 추가하고 모듈을 빌드하도록 Arena.Target.cs와 ArenaEditor.Target.cs를 수정하여 게임빌드와 에디터 빌드 설정을 지정해준다.
+   
+      ```c++
+      //Arena.Target.cs
+      ExtraModuleNames.AddRange( new string[] { "Arena", "ArenaBattleSetting" } );
+      ```
+
+   - <img src="Image/Win64.png" height="300" title="Win64">
+   - 위 과정을 마치고 빌드가 완료되면 Binaries 폴더에 새로운 파일(dll)이 만들어진다.
+      - 생성되면 언리얼 에디터가 이 DLL 파일을 uproject 파일을 통해서 로딩하도록 명령한다. 
+      - PreDefault로 설정하여 기존 Arena가 ArenaBattleSetting에게 의존하도록한다. -> ArenaBattleSetting이 먼저 프로세스에 올라감
+
+
+> **<h3>Realization</h3>**
+- 데코레이터의 NodeName은 비헤이비어 트리에 나타나게되는 이름이다.
+- 언리얼엔진은 게임 모듈을 사용해 게임 프로젝트의 로직을 관리한다.다른 모듈을 게임을 프로젝트에 추가하려면 로직을 분리해야한다.
+   - 주 게임 모듈은 자동으로 생성되지만 추가 모듈은 따로 추가한다.
+   - 모듈 폴더와 빌드 설정 파일 : 모듈 폴더와 모듈명으로 된 Build.cs파일
+   - 모듈의 정의 파일 : 모듈명으로 된 .cpp 파일
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //Arena.Target.cs
+      ExtraModuleNames.AddRange( new string[] { "Arena", "ArenaBattleSetting" } );
+      ```
+
+      </details>
