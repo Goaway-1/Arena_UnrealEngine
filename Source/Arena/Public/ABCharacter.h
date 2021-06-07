@@ -65,6 +65,9 @@ public:
 	void Attack();
 	FOnAttackEndDelegate OnAttackEnd;
 
+	//비동기 방식으로 에셋 적용
+	void OnAssetLoadCompleted();
+
 private:
 	void UpDown(float NewAxisValue);	
 	void LeftRight(float NewAxisValue);
@@ -107,4 +110,8 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category=Attack, Meta=(AllowPrivateAccess = true))
 	float AttackRadius;
+
+	//비동기 방식으로 에셋 적용
+	FSoftObjectPath CharacterAssetToLoad = FSoftObjectPath(nullptr);
+	TSharedPtr<struct FStreamableHandle> AssetStreamingHandle;
 };

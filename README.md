@@ -2538,7 +2538,7 @@
       - 기존 제공받은 ArenaBattleSetting파일을 Source에 추가하고 모듈을 빌드하도록 Arena.Target.cs와 ArenaEditor.Target.cs를 수정하여 게임빌드와 에디터 빌드 설정을 지정해준다.
    
       ```c++
-      //Arena.Target.cs
+      //Arena.Target.cs 와 ArenaEditor.Target.cs
       ExtraModuleNames.AddRange( new string[] { "Arena", "ArenaBattleSetting" } );
       ```
 
@@ -2546,6 +2546,7 @@
    - 위 과정을 마치고 빌드가 완료되면 Binaries 폴더에 새로운 파일(dll)이 만들어진다.
       - 생성되면 언리얼 에디터가 이 DLL 파일을 uproject 파일을 통해서 로딩하도록 명령한다. 
       - PreDefault로 설정하여 기존 Arena가 ArenaBattleSetting에게 의존하도록한다. -> ArenaBattleSetting이 먼저 프로세스에 올라감
+   - 이 과정이 새로운 모듈을 추가하는 방법이다.
 
 
 > **<h3>Realization</h3>**
@@ -2555,11 +2556,230 @@
    - 모듈 폴더와 빌드 설정 파일 : 모듈 폴더와 모듈명으로 된 Build.cs파일
    - 모듈의 정의 파일 : 모듈명으로 된 .cpp 파일
 
+## **06.06**
+> **<h3>Today Dev Story</h3>**
+- ### INI 설정과 애셋의 지연 로딩
+   1. 새로운 모듈에 추가한 ABCharacterSetting은 캐릭터 애셋의 목록을 보관한다. 이때 외부 INI파일을 사용한다.
+      - 생성자 코드에 지정할 수 있지만 애셋이 변경되면 코드를 다시 만들고 컴파일해야하는 번거롭기 때문에 유연하게 관리하도록 외부 INI파일에서 기본 속성 값을 지정하는 기능을 사용한다.
+      - 애셋 경로를 보관하기 위해 FSoftObjectPath라는 클래스를 제공한다. UCLASS 매크로에 config키워드 추가해 불러들일 INI파일의 이름을 지정하고 불러들일 PROPERTY 속성에는 config 키워드를 선언한다. 
+      - UCLASS 매크로내 config 키워드의 Arena이라는 설정으로 인해 초기화 단계에서 Config에 있는 DefaultArena.ini파일을 만들어 ABCharacterSetting의 CharacterAssets값을 설정한다.
+
       <details><summary>코드 보기</summary>
 
       ```c++
-      //Arena.Target.cs
-      ExtraModuleNames.AddRange( new string[] { "Arena", "ArenaBattleSetting" } );
+      //ABCharacterSetting.h
+      UCLASS(config=Arena)
+      class ARENABATTLESETTING_API UABCharacterSetting : public UObject
+      {
+         GENERATED_BODY()
+         
+      public:
+         UABCharacterSetting();
+         
+         UPROPERTY(config)
+         TArray<FSoftObjectPath> CharacterAssets;
+      };
       ```
 
       </details>
+
+   2. Config 폴더에 DefaultArena.ini 파일을 넣어준다. 클래스 기본 객체가 모두 메모리에 올라간다.
+      - <img src="Image/GetDefault.png" height="250" title="GetDefault">
+         
+         - 이렇게 메모리에 올라간 클래스 기본 객체는 GetDefault 함수를 사용해 가져올 수 있다. (엔진 종료시까지)
+         - Arena.Buil.cs에서 모듈을 참조하기 위해 추가해준다.
+            
+            ```c++
+            PrivateDependencyModuleNames.AddRange(new string[] { "ArenaBattleSetting" });
+            ```
+
+         - GetDefault 함수를 사용해 애셋 목록을 읽어들인다.
+      
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABCharacter.cpp
+         #include "ABCharacterSetting.h"
+         AABCharacter::AABCharacter()
+         {
+            ...
+            auto DefaultSetting = GetDefault<UABCharacterSetting>();
+            if(DefaultSetting->CharacterAssets.Num() > 0)
+            {
+               for (auto CharacterAsset : DefaultSetting->CharacterAssets)
+               {
+                  ABLOG(Warning, TEXT("Character Asset : %s"),*CharacterAsset.ToString());
+               }
+            }
+         }
+         ```
+
+         </details>
+
+   3. NPC가 생성될때 랜덤하게 목록 중 하나를 골라 로딩하도록 변경
+      - <img src="Image/Rand_NPC.gif" height="300" title="Rand_NPC">
+      - 게임 중에도 비동기 방식으로 에셋을 로딩하도록 FStreamableManager라는 클래스를 지원한다.
+         - 이 클래스는 프로젝트에서 하나만 활성화 하는 것이 좋기에 ABGameInstance에서 멤버 변수로 선언한다. 
+         - 로딩 명령은 AsyncLoad이다. FStreamableDelegate로 가능하지만 CreateUObject 명령을 사용해 즉석에서 델리게이트를 생성하여 함수와 연동하고 넘겨주는 방식이 간편하다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABGameInstance.h
+      #include "Engine/StreamableManager.h"
+      ...
+      public:
+         FStreamableManager StreamableManager;
+
+      //ABCharacter.h
+      private:
+         ...
+      	void OnAssetLoadCompleted();
+         	
+         FSoftObjectPath CharacterAssetToLoad = FSoftObjectPath(nullptr);
+	      TSharedPtr<struct FStreamableHandle> AssetStreamingHandle;
+
+      //ABCharacter.cpp
+      void AABCharacter::BeginPlay()
+      {
+         Super::BeginPlay();
+
+         if(!IsPlayerControlled())
+         {
+            auto DefaultSetting = GetDefault<UABCharacterSetting>();
+            int32 RandIndex = FMath::RandRange(0, DefaultSetting->CharacterAssets.Num() - 1);
+            CharacterAssetToLoad = DefaultSetting->CharacterAssets[RandIndex];
+
+            auto ABGameInstance = Cast<UABGameInstance>(GetGameInstance());
+            if(nullptr != ABGameInstance)
+            {
+               AssetStramingHandle = ABGameInstance->StreamableManager->RequestAsyncLoad(CharacterAssetToLoad,FStreamableDelegate::CreateUObject(this,&AABCharacter::OnAssetLoadCompleted));
+            }
+         }
+         ...
+      }
+      ...
+      void AABCharacter::OnAssetLoadCompleted() //실질적으로 변경
+      {
+         USkeletalMesh* AssetLoaded = Cast<USkeletalMesh>(AssetStreamingHandle->GetLoadedAsset());
+         AssetStreamingHandle.Reset();
+         if(nullptr != AssetLoaded)
+         {
+            GetMesh()->SetSkeletalMesh(AssetLoaded);
+         }
+      }
+      ```
+
+      </details>
+
+- ### 무한 맵의 생성
+   - 하나의 섹션을 클리어하면 새로운 섹션이 등장하는 무한 맵 스테이지를 제작한다. 특징은 다음과 같다.
+      - 섹션의 배경과 네 방향으로 캐릭터 입장을 통제하는 문을 제공한다.
+      - 플레이어가 섹션에 진입하면 모든 문을 닫는다.
+      - 문을 닫고 일정 시간 후 중앙에 NPC를 생성, 랜덤한 위치에 아이템 상자 생성
+      - 생성한 NPC가 죽으면 모든 문을 개방, 통과한 문으로 이어지는 새로운 섹션 생성
+   - Actor를 부모로 하는 ABSection 클래스를 Arena 모듈에 생성한다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABSection.h
+      private:
+         UPROPERTY(VisibleAnywhere, Category=MESHBUILDER_API, Meta=(AllowPrivateAccess = true))
+         UStaticMeshComponent *Mesh;
+      //ABSection.cpp
+      AABSection::AABSection()
+      {
+         // Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+         PrimaryActorTick.bCanEverTick = false;
+
+
+         Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MESH"));
+         RootComponent = Mesh;
+
+         FString AssetPath = TEXT("/Game/Book/StaticMesh/SM_SQUARE.SM_SQUARE");
+         static ConstructorHelpers::FObjectFinder<UStaticMesh>
+         SM_SQUARE(*AssetPath);
+         if(SM_SQUARE.Succeeded())
+         {
+            Mesh->SetStaticMesh(SM_SQUARE.Object);
+         }
+         else
+         {
+            ABLOG(Error, TEXT("Failed to load staticmesh asset : %s"),*AssetPath);
+         }
+      }
+      ```
+
+      </details>
+
+   - <img src="Image/Gate_Collision.png" height="300" title="Gate_Collision">
+   - 준비한 애셋에는 출입문을 붙일 수 있게 소켓이 준비되어 있는데 이에 철문을 부착한다.
+      - 철문마다 스태틱메시 컴포넌트를 제작하고 이를 소켓에 부착한다.
+      - 소켓 목록을 제작하고 이를 사용해 철문을 각각 부착한다. (TArray)
+      - <img src="Image/ABTrigger.png" height="300" title="ABTrigger">
+         - ABCharacter만을 감지하는 ABTrigger 콜리전 프리셋을 만들어 box 컴포넌트로 섹션에 추가한다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABSection.h
+      public:	
+         UPROPERTY(VisibleAnywhere, Category=Mesh, Meta = (AllowPrivateAccess = true))
+         TArray<UStaticMeshComponent*> GateMeshes;	//배열 여러개
+
+         UPROPERTY(VisibleAnywhere, Category=Trigger, Meta = (AllowPrivateAccess = true))
+	      TArray<UBoxComponent*> GateTriggers;
+
+      private:
+         UPROPERTY(VisibleAnywhere, Category=Trigger, Meta=(AllowPrivateAccess = true))
+         UBoxComponent *Trigger;
+         
+      //ABSection.cpp
+      AABSection::AABSection()
+      {
+         ...
+         Trigger = CreateDefaultSubobject<UBoxComponent>(TEXT("TRIGGER"));
+         Trigger->SetBoxExtent(FVector(775.0f,775.0f,300.0f));
+         Trigger->SetupAttachment(RootComponent);
+         Trigger->SetRelativeLocation(FVector(0.0f,0.0f,250.0f));
+         Trigger->SetCollisionProfileName(TEXT("ABTrigger"));
+
+         FString GateAssetPath = TEXT("/Game/Book/StaticMesh/SM_GATE.SM_GATE");
+         static ConstructorHelpers::FObjectFinder<UStaticMesh>
+         SM_GATE(*GateAssetPath);
+         if(!SM_GATE.Succeeded())
+         {
+            ABLOG(Error, TEXT("Failed to load staticmesh asset : %s"),*GateAssetPath);
+         }
+
+         static FName GateSockets[] = {{TEXT("+XGate")},{TEXT("-XGate")},{TEXT("+YGate")},{TEXT("-YGate")}};
+         for (FName GateSocket : GateSockets)
+         {
+            ABCHECK(Mesh->DoesSocketExist(GateSocket));
+            UStaticMeshComponent* NewGate = CreateDefaultSubobject<UStaticMeshComponent>(*GateSocket.ToString());
+            NewGate->SetStaticMesh(SM_GATE.Object);
+            NewGate->SetupAttachment(RootComponent,GateSocket);
+            NewGate->SetRelativeLocation(FVector(0.0f,-80.5f,0.0f));
+            GateMeshes.Add(NewGate);
+
+            UBoxComponent* NewGateTrigger = CreateDefaultSubobject<UBoxComponent>(*GateSocket.ToString().Append(TEXT("Trigger")));
+            NewGateTrigger->SetBoxExtent(FVector(100.0f,100.0f,300.0f));
+            NewGateTrigger->SetupAttachment(RootComponent,GateSocket);
+            NewGateTrigger->SetRelativeLocation(FVector(70.0f, 0.0f,250.0f));
+            NewGateTrigger->SetCollisionProfileName(TEXT("ABTrigger"));
+            GateTriggers.Add(NewGateTrigger);
+         }
+      }
+      ```
+
+      </details>
+
+
+> **<h3>Realization</h3>**
+- 외부 INI설정을 통해 오브젝트의 기본값을 유연하기 관리할 수 있다. 
+   - 애셋 경로를 보관하기 위해 FSoftObjectPath라는 클래스를 제공한다. UCLASS 매크로에 config키워드 추가해 불러들일 INI파일의 이름을 지정하고 불러들일 PROPERTY 속성에는 config 키워드를 선언한다. 
+   - 이렇게 메모리에 올라간 클래스 기본 객체는 GetDefault 함수를 사용해 가져올 수 있다. (엔진 종료시까지)
+- 클래스 기본 객체 : 모듈이 로딩되면서 자신에게 속한 오브젝트의 기본값을 지정해 생성하는 과정.
+- 게임 중에도 비동기 방식으로 에셋을 로딩하도록 FStreamableManager라는 클래스를 지원한다.
+   - 이 클래스는 프로젝트에서 하나만 있는 것이 좋다.

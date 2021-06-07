@@ -6,12 +6,14 @@
 #include "UObject/NoExportTypes.h"
 #include "ABCharacterSetting.generated.h"
 
-/**
- * 
- */
-UCLASS()
+UCLASS(config=Arena)
 class ARENABATTLESETTING_API UABCharacterSetting : public UObject
 {
 	GENERATED_BODY()
 	
+public:
+	UABCharacterSetting();
+	
+	UPROPERTY(config)
+	TArray<FSoftObjectPath> CharacterAssets;
 };

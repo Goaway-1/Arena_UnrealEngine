@@ -5,7 +5,9 @@
 #include "Arena.h"
 #include "Engine/GameInstance.h"
 #include "Engine/DataTable.h"
+#include "Engine/StreamableManager.h"
 #include "ABGameInstance.generated.h"
+
 
 USTRUCT(BlueprintType)
 struct FABCharacterData : public FTableRowBase
@@ -42,6 +44,7 @@ public:
 	virtual void Init() override;
 	FABCharacterData* GetABCharacterData(int32 Level);
 
+	FStreamableManager StreamableManager;
 private:
 	UPROPERTY()
 	class UDataTable* ABCharacterTable;
