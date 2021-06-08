@@ -2556,7 +2556,7 @@
    - 모듈 폴더와 빌드 설정 파일 : 모듈 폴더와 모듈명으로 된 Build.cs파일
    - 모듈의 정의 파일 : 모듈명으로 된 .cpp 파일
 
-## **06.06**
+## **06.07**
 > **<h3>Today Dev Story</h3>**
 - ### INI 설정과 애셋의 지연 로딩
    1. 새로운 모듈에 추가한 ABCharacterSetting은 캐릭터 애셋의 목록을 보관한다. 이때 외부 INI파일을 사용한다.
@@ -2783,3 +2783,222 @@
 - 클래스 기본 객체 : 모듈이 로딩되면서 자신에게 속한 오브젝트의 기본값을 지정해 생성하는 과정.
 - 게임 중에도 비동기 방식으로 에셋을 로딩하도록 FStreamableManager라는 클래스를 지원한다.
    - 이 클래스는 프로젝트에서 하나만 있는 것이 좋다.
+
+## **06.08**
+> **<h3>Today Dev Story</h3>**
+- ### 무한 맵의 생성_2
+   1. 철문 액터의 로직을 스테이트 머신으로 제작한다. (열거형으로 표현) 
+      - <img src="Image/Door_Open.png" height="300" title="Door_Open">
+         - 준비 : 문을 열어놓고 대기하다가 중앙의 박스 트리거로 플레어의 진입을 감지하면 전투 상태로 이동
+         - 전투 : 문을 닫고 일정 시간이 지난면 NPC와 아이템 상자 생성. 모든 NPC가 죽으면 완료 상태로 이동
+         - 완료 : 닫힌 문을 열고 각 문에 배치되어 있는 트리거 게이트로 플레어이를 감지하며 이동한 문의 방향으로 새로운 섹션을 소환
+      -  OnConstruction함수를 활용하여 스테이트 상황으로 모든 문이 열리도록 제작자에게 보여준다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABSection.h
+         public :
+            virtual void OnConstruction(const FTransform& Transform) override;
+         private:
+            enum class EsectionState : uint8
+            {
+               READY = 0,
+               BATTLE,
+               COMPLETE
+            };
+
+            void SetState(EsectionState NewState);
+            EsectionState CurrentState = EsectionState::READY;
+
+            void OperateGates(bool bOpen = true);
+
+            UPROPERTY(EditAnywhere, Category=State, Meta=(AllowPrivateAccess = true))
+            bool bNoBattle;
+         
+         //ABSection.cpp
+         void AABSection::BeginPlay()
+         {
+            Super::BeginPlay();
+
+            SetState(bNoBattle? EsectionState::COMPLETE : EsectionState::READY);	//현 상태에 따라 스테이트 조정
+         }
+
+         void AABSection::SetState(EsectionState NewState)
+         {
+            switch (NewState)
+            {
+            case EsectionState::READY:
+               Trigger->SetCollisionProfileName(TEXT("ABTrigger"));
+               for(UBoxComponent* GateTrigger : GateTriggers) GateTrigger->SetCollisionProfileName(TEXT("NoCollision"));
+               OperateGates(true);
+               break;
+            case EsectionState::BATTLE:
+               Trigger->SetCollisionProfileName(TEXT("NoCollision"));
+               for(UBoxComponent* GateTrigger : GateTriggers) GateTrigger->SetCollisionProfileName(TEXT("NoCollision"));
+               OperateGates(false);
+               break;
+            case EsectionState::COMPLETE:
+               Trigger->SetCollisionProfileName(TEXT("NoCollision"));
+               for(UBoxComponent* GateTrigger : GateTriggers) GateTrigger->SetCollisionProfileName(TEXT("ABTrigger"));
+               OperateGates(true);
+               break;
+            }
+            CurrentState = NewState;
+         }
+
+         void AABSection::OperateGates(bool bOpen)
+         {
+            for (UStaticMeshComponent* Gate : GateMeshes) Gate->SetRelativeRotation(bOpen ? FRotator(0.0f,-90.0f,0.0f) : FRotator::ZeroRotator);
+         }
+         ```
+
+         </details>
+
+   2. 문을 지나면 새로운 섹션 액터의 생성
+      - <img src="Image/Auto_Section.gif" height="300" title="Auto_Section">
+      - 이미 존재할 수도 있기에 확인하는 로직 또한 필요하다. (물리 엔진 기능 사용하며 이미 존재시 생성을 건너뜀)
+      - 새로운 섹션은 READY 상태부터 시작하며 트리거 영역을 활성화해서 플레이어의 진입을 감지한다. 또한 BATTLE 스테이트로 전환하고 문을 닫는다.
+      - 박스 컴포넌트를 사용하며 OnComponentBeginOverlap 델리게이트에 바인할 함수를 생성하고 연결한다.
+         - 모든 문을 하나의 델리게이트 함수에 연결한다. 이때 어떤 문인지 구분할 수 있도록 소켓에 태그를 설정하며 방향에 띄울 다음 섹션까지 생성하는 기능을 구현한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABSection.h
+         UFUNCTION()
+         void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult &SweepResult);
+      
+         UFUNCTION()
+         void OnGateTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult &SweepResult);
+
+         //ABSection.cpp
+         AABSection::AABSection()
+         {
+            ...
+            Trigger->OnComponentBeginOverlap.AddDynamic(this, & AABSection::OnTriggerBeginOverlap);
+            ...
+            for (FName GateSocket : GateSockets)
+            {
+               ...
+               NewGateTrigger->OnComponentBeginOverlap.AddDynamic(this, &AABSection::OnGateTriggerBeginOverlap);
+               NewGateTrigger->ComponentTags.Add(GateSocket);
+            }
+            ...
+         }
+         ...
+         void AABSection::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+         {
+            if(CurrentState == EsectionState::READY) SetState(EsectionState::BATTLE);
+         }
+
+         //생성
+         void AABSection::OnGateTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+         {
+            ABLOG(Warning,TEXT("The map produced"));
+            ABCHECK(OverlappedComponent->ComponentTags.Num() == 1);
+
+            FName ComponentTag = OverlappedComponent->ComponentTags[0];
+            FName SocketName = FName(*ComponentTag.ToString().Left(2));
+            if(!Mesh->DoesSocketExist(SocketName)) return;
+
+            FVector NewLocation = Mesh->GetSocketLocation(SocketName);
+
+            TArray<FOverlapResult> OverlapResults;
+            FCollisionQueryParams CollisionQueryParam(NAME_None, false, this);
+            FCollisionObjectQueryParams ObjectQueryParam(FCollisionObjectQueryParams::InitType::AllObjects);
+
+            bool bResult = GetWorld()->OverlapMultiByObjectType(
+               OverlapResults,
+               NewLocation,
+               FQuat::Identity,
+               ObjectQueryParam,
+               FCollisionShape::MakeSphere(775.0f),
+               CollisionQueryParam
+            );
+
+            if(!bResult) auto NewSection = GetWorld()->SpawnActor<AABSection>(NewLocation,FRotator::ZeroRotator);
+            else ABLOG(Warning, TEXT("New section area is not empty"));
+         }
+         ```
+
+         </details>
+
+- ### 내비게이션 메시 시스템 설정 
+   - <img src="Image/Generate_Section_End.gif" height="300" title="Generate_Section_End">
+   - 섹션에서 NPC와 아이템 상자를 생성하는 기능을 추가 (타이머를 이용해 생성될 시간조정)
+      - 2초후에 NPC가 생성되고 5초 후에는 NPC반경 6미터 내의 랜덤한 위치에 아이템 생성. 
+   - 게임중에 동적으로 내비게이션 메시를 생성하도록 설정해 줘야 새로운 섹션에서도 움직인다.
+      - 프로젝트 세팅 > 내비게이션 메시 > Runtime Generation을 Dynamic으로 변경
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABSection.h
+      private:
+         void OnNPCSpawn();
+         UPROPERTY(EditAnywhere, Category=Spawn, Meta=(AllowPrivateAccess = true))
+         float EnemySpawnTime;
+
+         UPROPERTY(EditAnywhere, Category=Spawn, Meta=(AllowPrivateAccess = true))
+         float ItemBoxSpawnTime;
+
+         FTimerHandle SpawnNPCTimerHandle = {};
+         FTimerHandle SpawnItemBoxTimerHandle = {};
+      //ABSection.cpp
+      #include "ABCharacter.h"
+      #include "ABItemBox.h"
+
+      AABSection::AABSection()
+      {
+         ...
+      	EnemySpawnTime = 2.0f;
+         ItemBoxSpawnTime = 5.0f;
+         ...
+      }
+      ...
+      void AABSection::SetState(EsectionState NewState)
+      {
+         ...
+         switch (NewState)
+	      {
+         case EsectionState::BATTLE:
+            ...
+            GetWorld()->GetTimerManager().SetTimer(SpawnNPCTimerHandle,FTimerDelegate::CreateUObject(this, &AABSection::OnNPCSpawn),EnemySpawnTime, false);
+            GetWorld()->GetTimerManager().SetTimer(SpawnItemBoxTimerHandle, FTimerDelegate::CreateLambda([this]()->void{
+               FVector2D RandXY = FMath::RandPointInCircle(600.0f);
+               GetWorld()->SpawnActor<AABItemBox>(GetActorLocation() + FVector(RandXY,30.0f),FRotator::ZeroRotator);
+            }), ItemBoxSpawnTime, false);
+            
+            break;
+         }
+      }
+      ...
+      void AABSection::OnNPCSpawn() //NPC의 생성
+      {
+         GetWorld()->SpawnActor<AABCharacter>(GetActorLocation() + FVector::UpVector * 88.0f, FRotator::ZeroRotator);
+      }
+      ```
+
+      </details>
+
+> **<h3>Realization</h3>**
+- 에디터 작업에서 선택한 액터의 속성이나 트랜스폼 정보가 변경될때 OnConstruction함수가 실행된다.
+     
+
+## **06.09**
+> **<h3>Today Dev Story</h3>**
+- ### 캐릭터 스테이트 설정
+   - 캐릭터의 기능을 체계적으로 관리하기 위해 캐릭터에 스테이트 머신 모델을 구현한다.
+      - PREINIT : 캐릭터 생성 전의 상태. 설정은 되어 있지만 캐릭터와 UI를 숨긴다. 그리고 데미지를 입지 않는다.
+      - LOADING : 선택한 캐릭터 애셋을 로딩하는 산태. 시작된 시점이기 때문에 구분이 가능하다. 플레이어 컨트롤러는 조종을 못하게 한다.
+      - READY : 로딩이 완료된 상태. 숨겨진 캐릭터와 UI를 보며주며 데미지를 받는다.
+      - DEAD : 캐릭터가 HP를 소진해 사망한 상태. 죽는 애니메이션을 재생하고 UI를 끈다. 동시에 충돌 기능을 없애고 입력을 비활성화한다. AI인 경우 비헤이비어 트리 로직을 중단하고 시간이 지나면 모든 상태를 초기화하고 재시작한다.
+
+> **<h3>Realization</h3>**
+      <details><summary>코드 보기</summary>
+
+      ```c++
+
+      ```
+
+      </details>
