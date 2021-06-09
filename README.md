@@ -190,7 +190,7 @@
    - <img src="Image/Player_Login.png" height="300" title="Player_Login"> 
    - 플레이어가 로그인(입장)하면 언리얼 엔진에서 PostLogin 이벤트 함수가 호출된다. 
       - 이 과정에서 플레이어가 조종한 폰을 생성하고 플레이어 컨트롤러가 해당 폰에 빙의하는 작업이 이루어진다.
-   - 각 생성되는 시점은 PostInitializeComponents, 빙의를 진행하는 시점은 PalyerController의 Posses, Pawn의 PossesedBy로 알 수 있다.
+   - 각 생성되는 시점은 PostInitializeComponents, 빙의를 진행하는 시점은 PalyerController의 Possess, Pawn의 PossesedBy로 알 수 있다.
    - 아래는 PostLogin 이벤트 함수에 로그를 찍어서 플레이어 설정이 이루어지는 과정을 나타냈다.
 
       <details><summary>코드 보기</summary>
@@ -2988,17 +2988,546 @@
 ## **06.09**
 > **<h3>Today Dev Story</h3>**
 - ### 캐릭터 스테이트 설정
-   - 캐릭터의 기능을 체계적으로 관리하기 위해 캐릭터에 스테이트 머신 모델을 구현한다.
+   - <img src="Image/Auto_Reset.gif" height="300" title="Auto_Reset">
+   1. 캐릭터의 기능을 체계적으로 관리하기 위해 캐릭터에 스테이트 머신 모델을 구현한다. (열거형)
       - PREINIT : 캐릭터 생성 전의 상태. 설정은 되어 있지만 캐릭터와 UI를 숨긴다. 그리고 데미지를 입지 않는다.
       - LOADING : 선택한 캐릭터 애셋을 로딩하는 산태. 시작된 시점이기 때문에 구분이 가능하다. 플레이어 컨트롤러는 조종을 못하게 한다.
       - READY : 로딩이 완료된 상태. 숨겨진 캐릭터와 UI를 보며주며 데미지를 받는다.
       - DEAD : 캐릭터가 HP를 소진해 사망한 상태. 죽는 애니메이션을 재생하고 UI를 끈다. 동시에 충돌 기능을 없애고 입력을 비활성화한다. AI인 경우 비헤이비어 트리 로직을 중단하고 시간이 지나면 모든 상태를 초기화하고 재시작한다.
+      - 블루프린트에서 사용할 수 있도록 UENUM(BlueprintType)을 선언하고 uint8으로 기반 유형을 지정
 
-> **<h3>Realization</h3>**
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //Arena.h
+         UENUM(BlueprintType)
+         enum class ECharacterState : uint8
+         {
+            PREINIT,
+            LOADING,
+            READY,
+            DEAD
+         };
+         //ArenaCharacter.h
+         public:
+            AABCharacter();
+            void SetCharacterState(ECharacterState NewState);
+            ECharacterState GetCharacterState() const;
+         private:
+            //상황
+            int32 AssetIndex = 0;
+            
+            UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category=State, Meta=(AllowPrivateAccess = true))
+            ECharacterState CurrentState;
+            
+            UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category=State, Meta=(AllowPrivateAccess = true))
+            bool bIsPlayer;
+
+            UPROPERTY()
+            class AABAIController* ABAIController;
+
+            UPROPERTY()
+            class AABPlayerController* ABPlayerController;
+         ```
+
+         </details>
+
+
+   2. 각 스테이트에 해야하는 행동을 설정
+      - 현재 설정상 플레이어도 전용 AI컨트롤러가 부착되므로 플레이어의 판별은 BeginPlay 시점이다. 이 시점에서 파악 후 IsPlayer변수에 결과를 저장한다.
+      - PREINIT 상태에서 시작되며 애셋의 로딩을 진행하고 LOADING으로 변경, 로딩이 완료되면 READY에서 게임을 진행하고 HP가 0이하로 떨어지면 DEAD로 변경
+      - 플레이어의 경우 INDEX 4번인 캐릭터 애셋을 사용하고 나머지는 랜점을 사용한다.
+        
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABCharacter.cpp
+         #include "ABPlayerController.h"
+         AABCharacter::AABCharacter()
+         {
+            ...
+            //스테이트에 따른 설정
+            AssetIndex = 4;
+
+            //숨긴다.
+            SetActorHiddenInGame(true);
+            HPBarWidget->SetHiddenInGame(true);
+            SetCanBeDamaged(false);
+         } 
+
+         void AABCharacter::BeginPlay()
+         {
+            Super::BeginPlay();
+            
+            auto CharacterWidget = Cast<UABCharacterWidget>(HPBarWidget->GetUserWidgetObject());
+            ABCHECK(nullptr != CharacterWidget);
+            CharacterWidget->BindCharacterStat(CharacterStat);
+
+            auto DefaultSetting = GetDefault<UABCharacterSetting>();
+            bIsPlayer = IsPlayerControlled();
+            if(bIsPlayer)	//플레이어인 경우
+            {
+               ABPlayerController = Cast<AABPlayerController>(GetController()());
+               ABCHECK(nullptr != ABPlayerController);
+               AssetIndex = 4;	//생성에셋
+            }
+            else	//Ai인 경우
+            {
+               ABAIController = Cast<AABAIController>(GetController());
+               ABCHECK(nullptr != ABAIController);
+               AssetIndex = FMath::RandRange(0, DefaultSetting->CharacterAssets.Num() - 1);	//생성에셋
+            }
+            
+            if(!IsPlayerControlled())
+            {
+               auto DefaultSetting = GetDefault<UABCharacterSetting>();
+               int32 RandIndex = FMath::RandRange(0, DefaultSetting->CharacterAssets.Num() - 1);
+               CharacterAssetToLoad = DefaultSetting->CharacterAssets[RandIndex];
+
+               auto ABGameInstance = Cast<UABGameInstance>(GetGameInstance());
+               if(nullptr != ABGameInstance)
+               {
+                  AssetStreamingHandle = ABGameInstance->StreamableManager.RequestAsyncLoad(CharacterAssetToLoad, FStreamableDelegate::CreateUObject(this, &AABCharacter::OnAssetLoadCompleted));
+               }
+            }
+            
+            CharacterAssetToLoad = DefaultSetting->CharacterAssets[AssetIndex];
+            auto ABGameInstance = Cast<UABGameInstance>(GetGameInstance());
+            ABCHECK(nullptr != ABGameInstance);
+            AssetStreamingHandle = ABGameInstance->StreamableManager.RequestAsyncLoad(CharacterAssetToLoad, FStreamableDelegate::CreateUObject(this, &AABCharacter::OnAssetLoadCompleted));
+            SetCharacterState(ECharacterState::LOADING);	//로딩으로 전환
+         }
+
+         void AABCharacter::SetCharacterState(ECharacterState NewState)
+         {
+            ABCHECK(CurrentState != NewState);
+            CurrentState = NewState;
+
+            switch (CurrentState)
+            {
+            case ECharacterState::LOADING:
+               SetActorHiddenInGame(true);
+               HPBarWidget->SetHiddenInGame(true);
+               SetCanBeDamaged(false);
+               break;
+            case ECharacterState::READY:
+               SetActorHiddenInGame(false);
+               HPBarWidget->SetHiddenInGame(false);
+               SetCanBeDamaged(true);
+               CharacterStat->OnHpIsZero.AddLambda([this]()->void
+               {
+                  SetCharacterState(ECharacterState::DEAD);
+               });
+               break;
+            case ECharacterState::DEAD:
+               SetActorEnableCollision(false);
+               GetMesh()->SetHiddenInGame(false);
+               HPBarWidget->SetHiddenInGame(true);
+               ABAnim->SetDeadAnim();
+               SetCanBeDamaged(false);
+               break;
+            }
+         }
+
+         ECharacterState AABCharacter::GetCharacterState() const
+         {
+            return CurrentState;
+         }
+         void AABCharacter::OnAssetLoadCompleted()
+         {
+            ...
+            SetCharacterState(ECharacterState::READY);
+         }
+         ```
+
+         </details>
+   
+   3. 스테이트에 맞게 비헤이비어 트리 로직을 수동으로 구동하고 중지할 수 있게 AI컨트롤러의 구조를 변경한다.
       <details><summary>코드 보기</summary>
 
       ```c++
+      //ABAIController.h
+      public:
+      	void RunAI();
+	      void StopAI();
+      //ABAIController.cpp
+      void AABAIController::OnPossess(APawn* InPawn)
+      {
+         Super::OnPossess(InPawn);
+      }
 
+      void AABAIController::RunAI()
+      {
+         if(UseBlackboard(BBAsset,Blackboard))
+         {
+            Blackboard->SetValueAsVector(HomePosKey, InPawn->GetActorLocation());	//Location을 HomePosKey에..
+            if(!RunBehaviorTree(BTAsset)) ABLOG(Error,TEXT("AIController couldn't run behavior tree!"));
+         }
+      }
+
+      void AABAIController::StopAI()
+      {
+         auto BehavoirTreeComponent = Cast<UBehaviorTreeComponent>(BrainComponent);
+         if(nullptr != BehavoirTreeComponent) BehavoirTreeComponent->StopTree(EBTStopMode::Safe);	//없다면 정지
+      }
       ```
 
       </details>
+   
+   4. 플레이어가 빙의할때 발생하는 PossessedBy함수는 제거하고 캐릭터의 READY 스테이트에서 구현한다. 
+      - 플레이어인 경우 입력을 활성화, AI인 경우 비헤이비어 트리 활성화. 죽으면 비활성화
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABCharacter.h
+         private:
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=State,Meta=(AllowPrivateAccess = true))
+            float DeadTimer;
+
+            FTimerHandle DeadTimerHandle = {};
+         //ABCharacter.cpp
+         void AABCharacter::SetCharacterState(ECharacterState NewState)
+         {
+            ...
+            switch (CurrentState)
+            {
+            case ECharacterState::LOADING:
+               if(bIsPlayer) DisableInput(ABPlayerController);
+               ...
+            case ECharacterState::READY:
+               ...
+
+               if(bIsPlayer)	//Player
+               {
+                  SetControlMode(EControlMode::DIABLO);
+                  GetCharacterMovement()->MaxWalkSpeed = 600.0f;
+                  EnableInput(ABPlayerController);
+               }
+               else	//AI
+               {
+                  SetControlMode(EControlMode::NPC);
+                  GetCharacterMovement()->MaxWalkSpeed = 400.0f;
+                  ABAIController->RunAI();
+               }
+               break;
+            case ECharacterState::DEAD:
+               ...
+
+               if(bIsPlayer) DisableInput(ABPlayerController);
+               else ABAIController->StopAI();
+
+               GetWorld()->GetTimerManager().SetTimer(DeadTimerHandle, FTimerDelegate::CreateLambda([this]()->void
+               {
+                  if(bIsPlayer) ABPlayerController->RestartLevel();
+                  else Destroy();
+               }),DeadTimer, false);
+               
+               break;
+            }
+         }
+         ```
+
+         </details>
+
+- ### 플레이어 데이터와 UI연동
+   1. 게임 점수와 같은 플레이어의 게임 데이터를 별도의 액터에서 보관하도록 구현한다. (PlayerState를 상속 받은 ABPlayerStaet)
+      - 이 클래스에는 FString형의 PlayerName 속성과 float형의 Score 속성이 미리 설계되어 있지만 따로 게임 진행 상황을 int32형으로 GameScore와 레벨을 ChacterLevel이라는 속성을 추가한다.
+      - 이 클래스를 게임 모드의 PlayerStateClass 속성에 지정하면 컨트롤러가 초기화될 때 함께 인스턴스를 생성하고 값을 컨트롤러의 PlayerState속성에 저장한다. PostLogin함수에 구성이 완료되므로 ABPlayerState의 초기화도 동시에 진행한다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABPlayerState.h
+      class ARENA_API AABPlayerState : public APlayerState
+      {
+         GENERATED_BODY()
+
+      public:
+         AABPlayerState();
+
+         int32 GetGameScore() const;
+         int32 GetCharacterLevel() const;
+
+         void InitPlayerData();
+
+      protected:
+         UPROPERTY(Transient)
+         int32 GameScore;	//점수
+
+         UPROPERTY(Transient)
+         int32 CharacterLevel;	//레벨
+      };
+      //ABPlayerState.cpp
+      AABPlayerState::AABPlayerState()
+      {
+         CharacterLevel = 1;
+         GameScore = 0;
+      }
+
+      int32 AABPlayerState::GetGameScore() const
+      {
+         return GameScore;
+      }
+
+      int32 AABPlayerState::GetCharacterLevel() const
+      {
+         return CharacterLevel;
+      }
+
+      void AABPlayerState::InitPlayerData()	//초기 생성
+      {
+         SetPlayerName(TEXT("Destiny"));
+         CharacterLevel = 5;
+         GameScore = 0;
+      }
+      //ABGameMode.cpp
+      #include "ABPlayerState.h"
+
+      AABGameMode::AABGameMode()
+      {
+         DefaultPawnClass = AABCharacter::StaticClass();	//ABPawn의 클래스 정보를 저장 (멀티 플레이를 고려, 만들어두는 것이 아님)
+
+         PlayerControllerClass = AABPlayerController::StaticClass();
+         PlayerStateClass = AABPlayerState::StaticClass();
+      }
+
+      void AABGameMode::PostLogin(APlayerController* NewPlayer)
+      {
+         Super::PostLogin(NewPlayer);
+
+         auto ABPlayerState = Cast<AABPlayerState>(NewPlayer->PlayerState);
+         ABCHECK(nullptr != ABPlayerState);
+         ABPlayerState->InitPlayerData();	//초기화
+      }
+      ```
+
+      </details>
+
+   2. 위의 정보를 토대로 레벨정보는 실제로 플레이어에게 반영해야한다
+      - <img src="Image/Start_5.png" height="300" title="Start_5"> 
+      - 컨트롤러가 캐릭터에 빙의할때 PlayerState속성에 플레이어 스테이트 포인터를 저장하기에 캐릭터에서 바로 가져올 수 있다.
+      - 시작시 5레벨로 진행한다.
+       
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         void AABCharacter::SetCharacterState(ECharacterState NewState)
+         {
+            ...
+            switch (CurrentState)
+            {
+            case ECharacterState::LOADING:
+               if(bIsPlayer) 
+               {
+                  DisableInput(ABPlayerController);
+
+                  auto ABPlayerState = Cast<AABPlayerState>(GetPlayerState());
+                  ABCHECK(nullptr != ABPlayerState);
+                  CharacterStat->SetNewLevel(ABPlayerState->GetCharacterLevel());
+               }
+               ...
+            }
+         }
+         ```
+
+         </details>
+
+   3. 위의 정보를 확인할 수 있는 HUD UI를 화면에 생성한다.
+      - <img src="Image/StateWidget.png" height="300" title="StateWidget"> 
+      - UserWidget을 부모로 하는 ABHUDWidget을 생성하고 UI_HUD 애셋의 그래프 > ABHUDWidget을 부모로 설정한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABPlayerController.h
+         public: 
+            AABPlayerController();
+            ...
+            class UABHUDWidget* GetHUDWidget() const;
+         protected:
+            ...
+            UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category=UI)
+            TSubclassOf<class UABHUDWidget> HUDWidgetClass;
+
+         private:
+            UPROPERTY()
+            class UABHUDWidget* HUDWidget;
+         //ABPlayerController.cpp
+         #include "ABHUDWidget.h"
+
+         AABPlayerController::AABPlayerController()
+         {
+            static ConstructorHelpers::FClassFinder<UABHUDWidget>
+            UI_HUD_C(TEXT("/Game/Book/UI/UI_HUD.UI_HUD_C"));
+            if(UI_HUD_C.Succeeded()) HUDWidgetClass = UI_HUD_C.Class;
+         }
+         void AABPlayerController::BeginPlay()
+         {
+            Super::BeginPlay();
+
+            FInputModeGameOnly InputMode;
+            SetInputMode(InputMode);
+
+            HUDWidget = CreateWidget<UABHUDWidget>(this, HUDWidgetClass);
+            HUDWidget->AddToViewport();
+         }
+
+         UABHUDWidget * AABPlayerController::GetHUDWidget() const
+         {
+            return HUDWidget;
+         }
+         ```
+
+         </details>
+
+- ### UI와 데이터의 연동 
+   - <img src="Image/Data_Connection.gif" height="300" title="Data_Connection">
+   1. 플레이어 스테이트와 캐릭터 스탯 컴포넌트 정보를 모두 해당 HUB에 연동한다.
+      - 새로운 델리게이트를 정의하고 플레이어 데이터가 변동될때 HUD에 신호를 보내 업데이트 하도록한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABPlayerState.h
+         DECLARE_MULTICAST_DELEGATE(FOnPlayerStateChangedDelegate);
+         public:
+            FOnPlayerStateChangedDelegate OnplayerStateChanged;
+         //ABHUDWidget.h
+         class ARENA_API UABHUDWidget : public UUserWidget
+         {
+            GENERATED_BODY()
+
+         public:
+            void BindCharcterStat(class UABCharacterStatComponent* CharacterStat);
+            void BindPlayerStat(class AABPlayerState* PlayerState);
+
+         protected:
+            virtual void NativeConstruct() override;
+            void UpdateCharacterStat();
+            void UpdatePlayerState();
+
+         private:
+            TWeakObjectPtr<class UABCharacterStatComponent> CurrentCharacterStat;
+            TWeakObjectPtr<class AABPlayerState> CurrentPlayerState;
+
+            UPROPERTY()
+            class UProgressBar* HPBar;
+
+            UPROPERTY()
+            class UProgressBar* ExpBar;
+
+            UPROPERTY()
+            class UTextBlock* PlayerName;
+
+            UPROPERTY()
+            class UTextBlock* PlayerLevel;
+
+            UPROPERTY()
+            class UTextBlock* CurrentScore;
+
+            UPROPERTY()
+            class UTextBlock* HighScore;
+         };
+         
+         //ABHUDWidget.cpp
+         #include "ABHUDWidget.h"
+         #include "Components/ProgressBar.h"
+         #include "Components/TextBlock.h"
+         #include "ABCharacterStatComponent.h"
+         #include "ABPlayerState.h"
+
+         void UABHUDWidget::BindCharcterStat(UABCharacterStatComponent* CharacterStat)	//HP바
+         {
+            ABCHECK(nullptr != CharacterStat);
+            CurrentCharacterStat = CharacterStat;
+            CharacterStat->OnHpChanged.AddUObject(this, &UABHUDWidget::UpdateCharacterStat);	//델리게이트
+         }
+         void UABHUDWidget::BindPlayerStat(AABPlayerState* PlayerState)	//상태 -> 싸움?
+         {
+            ABCHECK(nullptr != PlayerState);
+            CurrentPlayerState = PlayerState;
+            PlayerState->OnplayerStateChanged.AddUObject(this, &UABHUDWidget::UpdatePlayerState);
+         }
+         void UABHUDWidget::NativeConstruct()
+         {
+            Super::NativeConstruct();
+            HPBar = Cast<UProgressBar>(GetWidgetFromName(TEXT("pbHP")));
+            ABCHECK(nullptr != HPBar);
+
+            ExpBar = Cast<UProgressBar>(GetWidgetFromName(TEXT("pbEXP")));
+            ABCHECK(nullptr != ExpBar);
+
+            PlayerName = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtPlayerName")));
+            ABCHECK(nullptr != PlayerName);
+
+            PlayerLevel = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtPlayerLevel")));
+            ABCHECK(nullptr != PlayerLevel);
+
+            CurrentScore = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtCurrentScore")));
+            ABCHECK(nullptr != CurrentScore);
+
+            HighScore = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtHighScore")));
+            ABCHECK(nullptr != HighScore);
+         }
+
+
+         void UABHUDWidget::UpdateCharacterStat()	//HP바에 색칠
+         {
+            ABCHECK(CurrentCharacterStat.IsValid());
+
+            HPBar->SetPercent(CurrentCharacterStat->GetHPRatio());
+         }
+
+         void UABHUDWidget::UpdatePlayerState()
+         {
+            ABCHECK(CurrentPlayerState.IsValid());
+
+            PlayerName->SetText(FText::FromString(CurrentPlayerState->GetPlayerName()));
+            PlayerLevel->SetText(FText::FromString(FString::FromInt(CurrentPlayerState->GetCharacterLevel())));
+            CurrentScore->SetText(FText::FromString(FString::FromInt(CurrentPlayerState->GetGameScore())));
+         }
+         ```
+
+         </details>
+
+   2. 컨트롤러에서 HUD 위젯과 플레이어 스테이트를 연결하고 캐릭터에서는 HUD위젯과 캐릭터 스텟 컴포넌트를 연결한다.
+      - 2시간 애먹었다.  
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABPlayerController.cpp
+         void AABPlayerController::BeginPlay()
+         {
+            ...
+            //연결
+            auto ABPlayerState = Cast<AABPlayerState>(PlayerState);
+            ABCHECK(nullptr != ABPlayerState);
+            HUDWidget->BindPlayerState(ABPlayerState);
+            ABPlayerState->OnplayerStateChanged.Broadcast();	//알린다.
+         }
+         //ABCharacter.cpp
+         #include "ABHUDWidget.h"
+         void AABCharacter::SetCharacterState(ECharacterState NewState)
+         {
+            ...
+            switch (CurrentState)
+            {
+            case ECharacterState::LOADING:
+               if(bIsPlayer) 
+               {
+                  DisableInput(ABPlayerController);
+
+                  ABPlayerController->GetHUDWidget()->BindCharcterStat(CharacterStat);
+                  ...
+               }
+               ...
+            }
+            ...
+         }
+         ```
+
+         </details>
+
+> **<h3>Realization</h3>**
+- 게임 데이터는 액터에서 보관한다.

@@ -2,21 +2,24 @@
 
 
 #include "ABGameMode.h"
-//#include "ABPawn.h"			//내가 참조할것
 #include "ABCharacter.h"
 #include "ABPlayerController.h"
+#include "ABPlayerState.h"
 
 AABGameMode::AABGameMode()
 {
 	DefaultPawnClass = AABCharacter::StaticClass();	//ABPawn의 클래스 정보를 저장 (멀티 플레이를 고려, 만들어두는 것이 아님)
 
 	PlayerControllerClass = AABPlayerController::StaticClass();
+	PlayerStateClass = AABPlayerState::StaticClass();
 }
 
 void AABGameMode::PostLogin(APlayerController* NewPlayer)
 {
-	ABLOG(Warning, TEXT("PostLogin Begin"));
 	Super::PostLogin(NewPlayer);
-	ABLOG(Warning, TEXT("PostLogin End"));
+
+	auto ABPlayerState = Cast<AABPlayerState>(NewPlayer->PlayerState);
+	ABCHECK(nullptr != ABPlayerState);
+	ABPlayerState->InitPlayerData();	//초기화
 }
 
