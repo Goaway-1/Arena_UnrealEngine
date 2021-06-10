@@ -57,16 +57,20 @@ void UABCharacterStatComponent::SetHP(float NewHP)
 	}
 }
 
-float UABCharacterStatComponent::GetAttack()	//데미지를 준다.
+float UABCharacterStatComponent::GetAttack() const	//데미지를 준다.
 {
 	ABCHECK(nullptr != CurrentStatData, 0.0f);
 	return CurrentStatData->Attack;
 }
 
-float UABCharacterStatComponent::GetHPRatio()	//체력 비율을 리턴
+float UABCharacterStatComponent::GetHPRatio() const	//체력 비율을 리턴
 {
 	ABCHECK(nullptr != CurrentStatData, 0.0f);
 	return (CurrentStatData->MaxHP < KINDA_SMALL_NUMBER) ? 0.0f : (CurrentHP / CurrentStatData->MaxHP);
 }
 
+int32 UABCharacterStatComponent::GetDropExp() const
+{
+	return CurrentStatData->DropExp;
+}
 

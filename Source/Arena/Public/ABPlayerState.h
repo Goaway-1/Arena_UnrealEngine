@@ -17,9 +17,18 @@ public:
 	AABPlayerState();
 
 	int32 GetGameScore() const;
+	
+	//게임 데이터 저장과 로딩
+	int32 GetGameHighScore() const;
+	FString SaveSlotName;
+	
 	int32 GetCharacterLevel() const;
-
+	float GetExpRatio() const;
+	bool AddExp(int32 IncomeExp);
+	void AddGameScore();
+	
 	void InitPlayerData();
+	void SavePlayerData();
 	
 	FOnPlayerStateChangedDelegate OnPlayerStateChanged;
 protected:
@@ -27,5 +36,16 @@ protected:
 	int32 GameScore;	//점수
 
 	UPROPERTY(Transient)
+	int32 GameHighScore;
+	
+	UPROPERTY(Transient)
 	int32 CharacterLevel;	//레벨
+
+	UPROPERTY(Transient)
+	int32 Exp;
+
+private:
+	void SetCharacterLevel(int32 NewCharacterLevel);
+
+	struct FABCharacterData* CurrentStatData;
 };

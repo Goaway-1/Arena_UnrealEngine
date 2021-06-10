@@ -14,6 +14,7 @@
 #include "ABPlayerController.h"
 #include "ABPlayerState.h"
 #include "ABHUDWidget.h"
+#include "ABGameMode.h"
 
 // Sets default values
 AABCharacter::AABCharacter()
@@ -56,7 +57,7 @@ AABCharacter::AABCharacter()
 	
 	ArmLengthSpeed = 3.0f;
 	ArmRotationSpeed = 10.0f;
-	GetCharacterMovement()->JumpZVelocity = 800.0f;
+	GetCharacterMovement()->JumpZVelocity = 600.0f;
 
 	//콤보 관련
 	IsAttacking = false;
@@ -66,7 +67,7 @@ AABCharacter::AABCharacter()
 	//내가 만든 콜리전을 할당
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("ABCharacter"));
 
-	AttackRange = 200.0f;
+	AttackRange = 80.0f;
 	AttackRadius = 50.0f;
 
 	HPBarWidget->SetRelativeLocation(FVector(0.0f,0.0f,180.0f));
@@ -83,14 +84,15 @@ AABCharacter::AABCharacter()
 	AIControllerClass = AABAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
-	auto DefaultSetting = GetDefault<UABCharacterSetting>();
-	if(DefaultSetting->CharacterAssets.Num() > 0)
-	{
-		for (auto CharacterAsset : DefaultSetting->CharacterAssets)
-		{
-			ABLOG(Warning, TEXT("Character Asset : %s"),*CharacterAsset.ToString());
-		}
-	}
+	// 준비된 에셋들을 출력하는 과정
+	// auto DefaultSetting = GetDefault<UABCharacterSetting>();
+	// if(DefaultSetting->CharacterAssets.Num() > 0)
+	// {
+	// 	for (auto CharacterAsset : DefaultSetting->CharacterAssets)
+	// 	{
+	// 		ABLOG(Warning, TEXT("Character Asset : %s"),*CharacterAsset.ToString());
+	// 	}
+	// }
 
 	//스테이트에 따른 설정
 	AssetIndex = 4;
@@ -161,6 +163,15 @@ void AABCharacter::SetCharacterState(ECharacterState NewState)
 			ABCHECK(nullptr != ABPlayerState);
 			CharacterStat->SetNewLevel(ABPlayerState->GetCharacterLevel());
 		}
+		else
+		{
+			auto ABGameMode = Cast<AABGameMode>(GetWorld()->GetAuthGameMode());
+			ABCHECK(nullptr != ABGameMode);
+			int32 TargetLevel = FMath::CeilToInt(((float)ABGameMode->GetScore() * 0.8f));
+			int32 FinalLevel = FMath::Clamp<int32>(TargetLevel,1,20);
+			ABLOG(Warning,TEXT("New NPC Level : %d"),FinalLevel);
+			CharacterStat->SetNewLevel(FinalLevel);		//NPC의 레벨을 바꾼다.
+		}
 		SetActorHiddenInGame(true);
 		HPBarWidget->SetHiddenInGame(true);
 		SetCanBeDamaged(false);
@@ -212,15 +223,34 @@ ECharacterState AABCharacter::GetCharacterState() const
 	return CurrentState;
 }
 
+float AABCharacter::GetFinalAttackRange() const	//무기의 여부에 따라 거리 차이
+{
+	return (nullptr != CurrentWeapon) ? CurrentWeapon->GetAttackRange() : AttackRange;
+}
+
+float AABCharacter::GetFinalAttackDamage() const
+{
+	float AttackDamage = (nullptr != CurrentWeapon) ? (CharacterStat->GetAttack() + CurrentWeapon->GetAttackDamage()) : CharacterStat->GetAttack();
+	float AttackModifer = (nullptr != CurrentWeapon) ? CurrentWeapon->GetAttackModifier() : 1.0f;
+	return AttackDamage * AttackModifer;
+}
 
 bool AABCharacter::CanSetWeapon()	//무기 장착 가능 여부
 {
-	return (nullptr == CurrentWeapon);
+	return true;
 }
 
 void AABCharacter::SetWeapon(AABWeapon* NewWeapon)	//무기를 장착시키는 로직
 {
-	ABCHECK(nullptr != NewWeapon && nullptr == CurrentWeapon);
+	ABCHECK(nullptr != NewWeapon);
+
+	if(nullptr != CurrentWeapon)	//기존 무기가 있을때 파괴한다.
+	{
+		CurrentWeapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		CurrentWeapon->Destroy();
+		CurrentWeapon = nullptr;
+	}
+	
 	FName WeaponSocket(TEXT("hand_rSocket"));
 	if(nullptr != NewWeapon)
 	{
@@ -441,32 +471,48 @@ void AABCharacter::AttackEndComboState()	//콤보 종료
 	CurrentCombo = 0;
 }
 
+int32 AABCharacter::GetExp() const	//NPC인 경우에만 해당
+{
+	return CharacterStat->GetDropExp();
+}
+
 float AABCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	float FinalDamage = Super::TakeDamage(DamageAmount,DamageEvent,EventInstigator,DamageCauser);
 	ABLOG(Warning, TEXT("Actor : %s took Damage : %f"),*GetName(),FinalDamage);
 
 	CharacterStat->SetDamage(FinalDamage);
+	if(CurrentState == ECharacterState::DEAD)
+	{
+		if(EventInstigator->IsPlayerController())
+		{
+			ABPlayerController = Cast<AABPlayerController>(EventInstigator);
+			ABCHECK(nullptr != ABPlayerController,0.0f);
+			ABPlayerController->NPCKill(this);
+		}
+	}
 	return FinalDamage;
 }
 
 void AABCharacter::AttackCheck()
 {
+	float FinalAttackRange = GetFinalAttackRange();	//범위를 거져온다.
+	
 	FHitResult HitResult; //맞은 정보를 저장
 	FCollisionQueryParams Params(NAME_None, false, this);
 	bool bReslut = GetWorld()->SweepSingleByChannel(
 		HitResult,
 		GetActorLocation(),
-		GetActorLocation() + GetActorForwardVector() * 200.0f,
+		GetActorLocation() + GetActorForwardVector() * FinalAttackRange,
 		FQuat::Identity,
 		ECollisionChannel::ECC_GameTraceChannel2,	//Attack의 채널번호
 		FCollisionShape::MakeSphere(50.0f),
 		Params);
 	
 #if ENABLE_DRAW_DEBUG
-	FVector TraceVec = GetActorForwardVector() * AttackRange;
+	FVector TraceVec = GetActorForwardVector() * FinalAttackRange;
 	FVector Center = GetActorLocation() + TraceVec * 0.5f;
-	float HalfHeight = AttackRange * 0.5f + AttackRadius;
+	float HalfHeight = FinalAttackRange * 0.5f + AttackRadius;
 	FQuat CapsuleRot = FRotationMatrix::MakeFromZ(TraceVec).ToQuat();
 	FColor DrawColor = bReslut ? FColor::Green : FColor::Red;
 	float DebugLifeTime = 5.0f;
@@ -482,7 +528,7 @@ void AABCharacter::AttackCheck()
 			ABLOG(Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
 
 			FDamageEvent DamageEnvent;
-			HitResult.Actor->TakeDamage(CharacterStat->GetAttack(), DamageEnvent, GetController(), this);
+			HitResult.Actor->TakeDamage(GetFinalAttackDamage(), DamageEnvent, GetController(), this);
 		}
 	}
 }

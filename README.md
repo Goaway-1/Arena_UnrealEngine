@@ -3531,3 +3531,781 @@
 
 > **<h3>Realization</h3>**
 - 게임 데이터는 액터에서 보관한다.
+
+## **06.10**
+> **<h3>Today Dev Story</h3>**
+- ### 경험치 정보 추가
+   - <img src="Image/Exp_Up.gif" height="300" title="Exp_Up"> 
+   - NPC가 사망하면 NPC의 레벨에 지정된 경험칠를 플레이어에게 전달하고 레벨업 하는 기능 구현
+      - UI Progress로 표현하기에 비율 정보 계산 필요. 캐릭터 스텟에 NPC를 위한 경험치 값 설정. 플레이어 스테이트에 플레이어 경험치 보관
+      - 캐릭터 사망시 NPC가 플레이어에게 죽는지 검사하고 플레이어 컨트롤러를 통해 플레이어 스테이드 업데이트
+      - 데미지 프레임워크에서 컨트롤러의 정보를 가해자 인자로 전달되므로 이를 사용한다.
+      
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABPlayerState.h
+      public:
+      	float GetExpRatio() const;
+	      bool AddExp(int32 IncomeExp);
+         
+      protected:
+         UPROPERTY(Transient)
+         int32 Exp;
+
+      private:
+         void SetCharacterLevel(int32 NewCharacterLevel);
+
+         struct FABCharacterData* CurrentStatData;
+      //ABPlayerState.cpp  
+      #include "ABGameInstance.h"
+      ...
+      float AABPlayerState::GetExpRatio() const
+      {
+         if(CurrentStatData->NextExp <= KINDA_SMALL_NUMBER) return 0.0f;
+
+         float Result = (float)Exp/(float)CurrentStatData->NextExp;
+         ABLOG(Warning, TEXT("Ratio : %f, Current : %d, Next : %d"),Result,Exp,CurrentStatData->NextExp);
+         return Result;
+      }
+
+      bool AABPlayerState::AddExp(int32 IncomeExp)
+      {
+         if(CurrentStatData->NextExp == -1) return false; //만랩
+
+         bool DidLevelUp = false;
+         Exp += IncomeExp;
+         if(Exp >= CurrentStatData->NextExp)
+         {
+            Exp -= CurrentStatData->NextExp;
+            SetCharacterLevel(CharacterLevel + 1);
+            DidLevelUp = true;
+         }
+         OnPlayerStateChanged.Broadcast();	//스텟바뀌었다!
+         return DidLevelUp;
+      }
+
+      void AABPlayerState::SetCharacterLevel(int32 NewCharacterLevel)	//레벨업
+      {
+         auto ABGameInstance = Cast<UABGameInstance>(GetGameInstance());
+         ABCHECK(nullptr != ABGameInstance);
+
+         CurrentStatData = ABGameInstance->GetABCharacterData(NewCharacterLevel);
+         ABCHECK(nullptr != CurrentStatData);
+         
+         CharacterLevel = NewCharacterLevel;
+      }
+      //ABHUDWidget.cpp
+      void UABHUDWidget::UpdatePlayerState()
+      {
+         ABCHECK(CurrentPlayerState.IsValid());
+
+         ExpBar->SetPercent(CurrentPlayerState->GetExpRatio());
+         ...
+      }
+      //ABCharacterStatComponent.h
+      public:
+      	int32 GetDropExp() const;
+      //ABCharacterStatComponent.cpp
+      int32 UABCharacterStatComponent::GetDropExp() const
+      {         
+         return CurrentStatData->DropExp;
+      }
+      //ABCharacter.h
+      public:
+         int32 GetExp() const;
+      //ABCharacter.cpp
+      int32 AABCharacter::GetExp() const	//NPC인 경우에만 해당
+      {
+         return CharacterStat->GetDropExp();
+      }
+      ...
+      float AABCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+      {
+         ...
+         if(CurrentState == ECharacterState::DEAD)
+         {
+            if(EventInstigator->IsPlayerController())
+            {
+               ABPlayerController = Cast<AABPlayerController>(EventInstigator);
+               ABCHECK(nullptr != ABPlayerController,0.0f);
+               ABPlayerController->NPCKill(this);
+            }
+         }
+         ...
+      }
+      //ABPlayerController.h
+      public:
+      	void NPCKill(class AABCharacter* KilledNPC) const;
+      private:
+         UPROPERTY()
+	      class AABPlayerState* ABPlayerState;
+      //ABPlayerController.cpp
+      void AABPlayerController::BeginPlay()
+      {
+         ...
+         ABPlayerState = Cast<AABPlayerState>(PlayerState);
+         ...
+      }
+      ...
+      void AABPlayerController::NPCKill(AABCharacter* KilledNPC) const
+      {
+         ABPlayerState->AddExp(KilledNPC->GetExp());
+      }
+      ```
+
+      </details>
+
+- ### 게임 데이터의 관리
+   - <img src="Image/Score_UP.gif" height="300" title="Score_UP">
+   - UI오른쪽 상단에 게임의 스코어를 구현 NPC를 잡을때마다 상승하며 게임 데이터만 관리하는 GameStateBase를 부모로한 ABGameState 클래스를 생성한다.
+      - 게임 스코어를 저장하는 속성 추가
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABGameState.h
+      class ARENA_API AABGameState : public AGameStateBase
+      {
+         GENERATED_BODY()
+
+      public:
+         AABGameState();
+
+         int32 GetTotalGameScore() const;
+         void AddGameScore();
+
+      private:
+         UPROPERTY(Transient)
+         int32 TotalGameScore;
+      };
+      //ABGameState.cpp
+      AABGameState::AABGameState()
+      {
+         TotalGameScore = 0;
+      }
+
+      int32 AABGameState::GetTotalGameScore() const
+      {
+         return TotalGameScore;
+      }
+
+      void AABGameState::AddGameScore()
+      {
+         TotalGameScore++;
+      }
+      //ABGameMode.cpp
+      #include "ABGameState.h"
+      AABGameMode::AABGameMode()
+      {
+         ...
+         GameStateClass = AABGameState::StaticClass();
+      }
+      ```
+
+      </details>
+
+   - NPC가 제거되면 섹션 액터의 스테이트를 COMPLETE로 변경하고 마지막으로 데미지를 입힌 컨트롤러의 기록을 LastHitBy속성을 통해 정보를 가져온다.
+      - 이 방식의 경우 소멸될 때 검사를 하기에 Instigator보다 효율적이다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABSection.h
+      private:
+      	UFUNCTION()
+	      void OnKeyNPCDestroyed(AActor* DestroyActor);
+      //ABSection.cpp
+      #include "ABPlayerController.h"
+      ...
+      void AABSection::OnNPCSpawn()
+      {
+         GetWorld()->GetTimerManager().ClearTimer(SpawnNPCTimerHandle);
+         auto KeyNPC = GetWorld()->SpawnActor<AABCharacter>(GetActorLocation() + FVector::UpVector * 88.0f, FRotator::ZeroRotator);
+         if(nullptr != KeyNPC) KeyNPC->OnDestroyed.AddDynamic(this, &AABSection::OnKeyNPCDestroyed);
+      }
+      void AABSection::OnKeyNPCDestroyed(AActor* DestroyActor)
+      {
+         auto ABCharacter = Cast<AABCharacter>(DestroyActor);
+         ABCHECK(nullptr != ABCharacter);
+
+         auto ABPlayerController = Cast<AABPlayerController>(ABCharacter->LastHitBy);
+         ABCHECK(nullptr != ABPlayerController);
+
+         SetState(EsectionState::COMPLETE);
+      }
+      ```
+
+      </details>
+
+   - NPC를 제거해 섹션을 클리어하면 게임 모드에게 스코어를 올리라는 명령을 내린다.
+      - 마지막 피격 컨트롤러 정보를 넘기고 해당 플레이어 스테이트 스코어를 높이고 전체 스코어도 높인다.
+      - 현재 참여중인 컨트롤러의 목록은 월드에서 제공하는 GetPlayerControllerIterator를 사용한다.
+   
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABPlayerState.h
+      public:
+      	void AddGameScore();
+      //ABPlayerState.cpp
+      void AABPlayerState::AddGameScore()
+      {
+         GameScore++;
+         OnPlayerStateChanged.Broadcast();
+      }
+      //ABPlayerController.h
+      public:
+      	void AddGameScore() const;
+      //ABPlayerController.cpp
+      void AABPlayerController::AddGameScore() const
+      {
+         ABPlayerState->AddGameScore();	
+      }
+      //ABGameMode.h
+      class ARENA_API AABGameMode : public AGameModeBase
+      {
+         GENERATED_BODY()
+      public:
+         AABGameMode();
+
+         virtual void PostInitializeComponents() override;
+         virtual void PostLogin(APlayerController* NewPlayer) override;
+         void AddScore(class AABPlayerController* ScoredPlayer);
+
+      private:
+         UPROPERTY()
+         class AABGameState* ABGameState;
+      };
+      //ABGameMode.cpp
+      void AABGameMode::PostInitializeComponents()
+      {
+         Super::PostInitializeComponents();
+         ABGameState = Cast<AABGameState>(GameState);
+      }
+
+      void AABGameMode::AddScore(AABPlayerController* ScoredPlayer)
+      {
+         for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+         {
+            const auto ABPlayerController = Cast<AABPlayerController>(It->Get());
+            if((nullptr != ABPlayerController) & (ScoredPlayer == ABPlayerController))
+            {
+               ABPlayerController->AddGameScore();
+               break;
+            }
+         }
+         ABGameState->AddGameScore();
+      }
+      //ABSection.cpp
+      void AABSection::OnKeyNPCDestroyed(AActor* DestroyActor)
+      {
+         ...
+         auto ABGameMode = Cast<AABGameMode>(GetWorld()->GetAuthGameMode());
+         ABCHECK(nullptr != ABGameMode);
+         ABGameMode->AddScore(ABPlayerController);
+         ...
+      }
+      ```
+
+      </details>
+
+- ### 게임 데이터의 저장과 로딩 
+   - <img src="Image/Data_Save.gif" height="300" title="Data_Save">
+   - SaveGame이라는 부모를 상속받아 게임데이터의 저장과 로딩을 간편하기 구현할 수 있다. (ABSaveGame)
+   - 각 플랫폼별로 최적의 장소에 데이터가 저장되며, 게임 데이터를 저장하는 경우 프로젝츠의 saved 폴더에 있는 savegames라는 폴더에 저장된다.
+      - 각 저장파일에 접근할 수 있는 고유 이름인 슬롯 이름이 필요하다. Player1이라는 슬롯 이름을 사용해 하나의 세이브 파일만 관리한다.
+      - 처음에는 세이브된 데이터가 없기 때문에 PlayerState에서 InitPlayerDtat에 기본 세이브 데이터를 생성하는 로직을 구현한다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABSaveGame.h
+      class ARENA_API UABSaveGame : public USaveGame
+      {
+         GENERATED_BODY()
+      public:
+         UABSaveGame();
+
+         UPROPERTY()
+         int32 Level;
+
+         UPROPERTY()
+         int32 Exp;
+
+         UPROPERTY()
+         FString PlayerName;
+
+         UPROPERTY()
+         int32 HighScore;
+      };
+      //ABSaveGame.cpp
+      UABSaveGame::UABSaveGame()
+      {
+         Level = 1;
+         Exp = 0;
+         PlayerName = TEXT("Guest");
+         HighScore = 0;
+      }
+      //ABPlayerState.cpp
+      #include "ABSaveGame.h"
+      AABPlayerState::AABPlayerState()
+      {
+         CharacterLevel = 1;
+         GameScore = 0;
+         GameHighScore = 0;
+         Exp = 0;
+         SaveSlotName = TEXT("Player1");
+      }
+      ...
+      int32 AABPlayerState::GetGameHighScore() const
+      {
+         return GameHighScore;
+      }
+      void AABPlayerState::InitPlayerData()	//초기 생성
+      {
+         auto ABSaveGame = Cast<UABSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName,0));
+         if(nullptr == ABSaveGame) ABSaveGame = GetMutableDefault<UABSaveGame>();	//없다면 저장 데이터를 새로만든다.
+
+         //데이터를 불러온다.
+         SetPlayerName(ABSaveGame->PlayerName);
+         SetCharacterLevel(ABSaveGame->Level);
+         GameScore = 0;
+         GameHighScore = ABSaveGame->HighScore;
+         Exp = ABSaveGame->Exp;
+      }
+      ...
+      void AABPlayerState::AddGameScore() //최고기록갱신
+      {
+         GameScore++;
+         if(GameScore >= GameHighScore) GameHighScore = GameScore;
+         OnPlayerStateChanged.Broadcast();
+      }
+      ```
+
+      </details>
+   
+   - 플레이어에 관련된 데이터가 변경될 때마다 이를 저장하도록 구현한다. 최초에 데이터를 저장하고 경험치에 변동이 있을 때마다 저장한다.
+      - AddGameScore와 AddExp에 SavePlayerData()힘수를 추가한다.
+      - 플레이어 스테이트의 HighScore 값을 HUD UI에 연동한다.
+   
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABPlayerState.h
+      public:
+      	void SavePlayerData();
+      //ABPlayerState.cpp
+      void AABPlayerState::InitPlayerData()	//초기 생성
+      {
+         ...
+         SavePlayerData();
+      }
+      void AABPlayerState::SavePlayerData()
+      {
+         UABSaveGame* NewPlayerData = NewObject<UABSaveGame>();
+         NewPlayerData->PlayerName = GetPlayerName();
+         NewPlayerData->Level = CharacterLevel;
+         NewPlayerData->Exp = Exp;
+         NewPlayerData->HighScore = GameHighScore;
+
+         if(!UGameplayStatics::SaveGameToSlot(NewPlayerData, SaveSlotName,0)) ABLOG(Error, TEXT("SaveGame Error!"));
+      }
+      ...
+      //AddGameScore와 AddExp에 	SavePlayerData(); 추가
+      //ABHUDWidget.cpp
+      void UABHUDWidget::UpdatePlayerState()
+      {
+         ...
+         HighScore->SetText(FText::FromString(FString::FromInt(CurrentPlayerState->GetGameHighScore())));
+      }
+      ```
+
+      </details>
+
+- ### 전투 시스템의 설계
+   - 난이도를 점진적으로 높이기 위해 부가 요소를 추가한다.
+   1. 캐릭터는 무기를 들때 더 긴 공격범위를 가진다.
+      - <img src="Image/Attack_Range_Set.gif" height="300" title="Attack_Range_Set">
+      - 무기 액터임 ABWeapon에 AttackRange라는 속성을 추가하고, 무기가 없을 때는 캐릭터의 AttackRange를 사용한다.
+         - 캐릭터의 AttackRange 기본값을 80으로 낮추고 무기는 150으로 지정한다. 
+         - 해당 속성 키워드에 EditAnywhere, Blueprint, ReadWrite를 지정해 ABWeapon 클래스를 상속받은 무기 블루프린트에서도 공격범위를 다르게 설정할 수 있도록 기능을 부여한다.
+         - 또한 무기를 변경할 수 있도록 CanSetWeapon의 값을 무조건 true로 설정하고 기존 무기가 있어도 새로운 무기를 습득하도록 변경한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABWeapon.h
+         public:
+            float GetAttackRange() const;
+         private:
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Attack)
+            float AttackRange;
+         //ABWeapon.cpp
+         AABWeapon::AABWeapon()
+         {
+            ... 
+            AttackRange = 150.0f;
+         }
+         float AABWeapon::GetAttackRange() const
+         {
+            return AttackRange;
+         }
+         //ABCharacter.h
+         public:
+            float GetFinalAttackRange() const;
+         //ABCharacter.cpp
+         AABCharacter::AABCharacter()
+         {
+            ...
+            AttackRange = 80.0f;
+            ...
+         }
+         ...
+         float AABCharacter::GetFinalAttackRange() const	//무기의 여부에 따라 거리 차이
+         {
+            return (nullptr != CurrentWeapon) ? CurrentWeapon->GetAttackRange() : AttackRange;
+         }
+         bool AABCharacter::CanSetWeapon()	//무기 장착 가능 여부
+         {
+            return true;
+         }
+         void AABCharacter::SetWeapon(AABWeapon* NewWeapon)	//무기를 장착시키는 로직
+         {
+            ABCHECK(nullptr != NewWeapon);
+
+            if(nullptr != CurrentWeapon)	//기존 무기가 있을때 파괴한다.
+            {
+               CurrentWeapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+               CurrentWeapon->Destroy();
+               CurrentWeapon = nullptr;
+            }
+            ...
+         }
+         ...
+         void AABCharacter::AttackCheck()
+         {
+            float FinalAttackRange = GetFinalAttackRange();	//범위를 거져온다.
+            
+            ...
+               GetActorLocation() + GetActorForwardVector() * FinalAttackRange,
+            ...
+            
+         #if ENABLE_DRAW_DEBUG
+            FVector TraceVec = GetActorForwardVector() * FinalAttackRange;
+            FVector Center = GetActorLocation() + TraceVec * 0.5f;
+            float HalfHeight = FinalAttackRange * 0.5f + AttackRadius;
+            ...
+         }
+         //BTDecorator_IsInAttackRange.cpp
+         bool UBTDecorator_IsInAttackRange::CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const
+         {
+            ...
+            auto ControllingPawn = Cast<AABCharacter>(OwnerComp.GetAIOwner()->GetPawn());
+            ...
+            bResult = (Target->GetDistanceTo(ControllingPawn) <= ControllingPawn->GetFinalAttackRange());
+            return bResult;
+         }
+         ```
+
+         </details>
+   
+   2. 공격할 때 무기가 있는 경우 기존 공격력을 증폭시킨다.
+      - <img src="Image/Damage_Set.png" height="250" title="Damage_Set">
+      - 무기에는 공격력 증가치가 랜덤으로 부여되며, 운이 없으면 오히려 무기에 의해 공격력이 저하될 수 있다.
+      - 무기에 공격력과 효과치 속성을 설정하고 최종 대미지를 산출할 때 이 데이터를 활용한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABWeapon.h
+         public:	
+            ...
+            float GetAttackDamage() const;
+            float GetAttackModifier() const;
+
+         protected:
+            ...
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Attack)
+            float AttackDamageMin;
+            
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Attack)
+            float AttackDamageMax;
+            
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Attack)
+            float AttackModifierMin;
+            
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Attack)
+            float AttackModifierMax;
+            
+            UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category=Attack)
+            float AttackDamage;
+
+            UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category=Attack)
+            float AttackModifier;
+         //ABWeapon.cpp
+         AABWeapon::AABWeapon()
+         {
+            AttackRange = 150.0f;
+            AttackDamageMin = -2.5f;
+            AttackDamageMax = 10.0f;
+            AttackModifierMin = 0.85f;
+            AttackModifierMax = 1.25f;
+         }
+
+         float AABWeapon::GetAttackDamage() const
+         {
+            return AttackDamage;
+         }
+
+         float AABWeapon::GetAttackModifier() const
+         {
+            return AttackModifier;
+         }
+
+         void AABWeapon::BeginPlay()
+         {
+            Super::BeginPlay();
+
+            AttackDamage = FMath::RandRange(AttackDamageMin,AttackDamageMax);
+            AttackModifier = FMath::RandRange(AttackModifierMin,AttackModifierMax);
+            ABLOG(Warning,TEXT("Weapon Damage : %f, Modifier : %f"),AttackDamage,AttackModifier);
+         }
+         //ABCharacter.h
+         public: 
+            float GetFinalAttackDamage() const;
+         //ABCharacter.cpp
+         float AABCharacter::GetFinalAttackDamage() const
+         {
+            float AttackDamage = (nullptr != CurrentWeapon) ? (CharacterStat->GetAttack() + CurrentWeapon->GetAttackDamage()) : CharacterStat->GetAttack();
+            float AttackModifer = (nullptr != CurrentWeapon) ? CurrentWeapon->GetAttackModifier() : 1.0f;
+            return AttackDamage * AttackModifer;
+         }
+         void AABCharacter::AttackCheck()
+         {
+            ...
+         #endif
+
+            if(bReslut)
+            {
+               if(HitResult.Actor.IsValid())
+               {
+                  ABLOG(Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+
+                  FDamageEvent DamageEnvent;
+                  HitResult.Actor->TakeDamage(GetFinalAttackDamage(), DamageEnvent, GetController(), this);
+               }
+            }
+         }
+         ```
+
+         </details>
+
+   3. 현재 게임 스코어가 높을수록 생성되는 NPC의 레벨도 증가한다.
+      - <img src="Image/NPC_Level.png" height="250" title="NPC_Level">
+      - NPC 캐릭터의 Loading 스테이트에서 현재 게임 스코어를 게임 모드에 질의하고 캐릭터의 레벨 값을 설정
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABGameMode.h
+         public:
+            int32 GetScore() const;
+         //ABGameMode.cpp
+         int32 AABGameMode::GetScore() const
+         {
+            return ABGameState->GetTotalGameScore();
+         }
+         //ABCharacter.cpp
+         void AABCharacter::SetCharacterState(ECharacterState NewState)
+         {
+            ...
+            switch (CurrentState)
+            {
+            case ECharacterState::LOADING:
+               ...
+               else
+               {
+                  auto ABGameMode = Cast<AABGameMode>(GetWorld()->GetAuthGameMode());
+                  ABCHECK(nullptr != ABGameMode);
+                  int32 TargetLevel = FMath::CeilToInt(((float)ABGameMode->GetScore() * 0.8f));
+                  int32 FinalLevel = FMath::Clamp<int32>(TargetLevel,1,20);
+                  ABLOG(Warning,TEXT("New NPC Level : %d"),FinalLevel);
+                  CharacterStat->SetNewLevel(FinalLevel);		//NPC의 레벨을 바꾼다.
+               }
+               ...
+            }
+            ...
+         }
+         ```
+
+         </details>
+
+- ### 타이틀 화면의 제작_메인화면
+   - <img src="Image/Main_Menu.png" height="250" title="Main_Menu">
+   - 공백 레벨을 만들고 Title이라는 이름으로 저장한다. 해당 레벨은 기능없이 UI만 띄워준다.
+   - PlayerController를 부모로 하는 ABUIPlayerController라는 이름의 클래스를 만든다.
+      - 이를 상속받은 블루프린트에서 UI클래스 값을 띄울수 있도록 EditDefaultOnly 키워드를 지정한다.
+      - 게임을 시작하면 해당 클래스로부터 UI인스턴스를 생성하고 뷰포트에 띄운 후 입력은 UI에만 전달되도록 한다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABUIPlayerController.h
+      class ARENA_API AABUIPlayerController : public APlayerController
+      {
+         GENERATED_BODY()
+
+      public:
+         virtual void BeginPlay() override;
+
+         UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category=UI)
+         TSubclassOf<class UUserWidget> UIWidgetClass;
+         
+         UPROPERTY()
+         class UUserWidget* UIWidgetInstance;
+      };
+      //ABUIPlayerController.cpp
+      #include "ABUIPlayerController.h"
+      #include "Blueprint/UserWidget.h"
+
+      void AABUIPlayerController::BeginPlay()
+      {
+         Super::BeginPlay();
+
+         ABCHECK(nullptr != UIWidgetClass);
+
+         UIWidgetInstance = CreateWidget<UUserWidget>(this, UIWidgetClass);
+         ABCHECK(nullptr != UIWidgetInstance);
+
+         //뷰포트에 띄운다.
+         UIWidgetInstance->AddToViewport();
+
+         //UI에만 입력가능
+         FInputModeUIOnly Mode;
+         Mode.SetWidgetToFocus(UIWidgetInstance->GetCachedWidget());
+         SetInputMode(Mode);
+         bShowMouseCursor = true;
+      }
+      ```
+
+      </details>
+
+   - 위의 cpp파일을 기반으로 하는 BP_TitleUIPlayerController라는 블루프린트를 생성한다.
+      - UIWidget Class를 UI_Title(미리 가져온)으로 설정한다.
+   - BP_TitleGameMode라는 블루프린트를 생성하여 BP_TitleUIPlayerController를 띄워준다. (c++가 아닌 블루프린트로)
+      - Default Pawn Class를 아무런 기능이 없는 Pawn, Player Controller Class를 BP_TitleUIPlayerController로 설정한다.
+
+   - <img src="Image/UI_Title.png" height="250" title="UI_Title">
+   - UI에셋 내에는 로직이 존재해 새로 시작하기를 누르면 캐릭터 선택을 위한 select로 이동하고, 이어하기는 GamePlay 레벨로 이동한다.
+      - 또한 이어하기할때 데이터가 없다면 비활성화 된다.
+
+- ### 타이틀 화면의 제작_선택창
+
+   1. 캐릭터 선택창의 구현
+      - <img src="Image/Select_Menu.png" height="250" title="Select_Menu">
+      - ABUIPlayerController를 상속받은 BP_SelectUIPlayerController 블루프린트를 생성하고 UIWidget Class 속성을 UI_Select로 지정한다.
+      - BP_SelectGameMode라는 게임 모드를 생성하고 PlayerController 클래스와 DefaultPawnClass를 각각 BP_SelectUIPlayerController와 Pawn으로 지정한다.
+      - 월드 셋팅에서 BP_SelectGameMode를 기본 게임 모드로 지정하면 양옆으로 버튼이 보인다.
+
+   2. 좌우 버튼의 로직을 구현한다.
+      - UserWidget을 상속받은 ABCharacterSelectwidget 클래스를 생성한다.
+         - 스켈레탈 메시 액터의 목록을 가져오고 버튼을 누를 때마다 스켈레탈 메시를 변경해준다.
+         - 특정 타입을 상속받은 액터의 목록은 TActorIterator<액터타입>구문을 사용해 가져온다.
+      - NextCharacter 함수는 블루프린트에서 사용할 수 있도록 함수에 UFUNCTION 매크로와 BlueprintCallable 키워드를 추가한다.
+      - 컴파일 후 UI_Select에셋의 부모 클래스를 ABCharacterSelectWidget으로 변경한다.
+   
+
+> **<h3>Realization</h3>**
+- 게임 데이터의 저장은 SaveGame에서 관리한다. 
+   - 각 플랫폼별로 최적의 장소에 데이터가 저장되며, 게임 데이터를 저장하는 경우 프로젝츠의 saved 폴더에 있는 savegames라는 폴더에 저장된다.
+- 언리얼 오브젝트를 생성할때 NewObject 명령을 사용하며 더 이상 사용하지 않으면 알아서 가비지 컬렉터가 탐지해 자동으로 소멸시킨다.
+- 캐릭터 선택창은 새로운 Map으로 저장
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacterSeletWidget.h
+      class ARENA_API UABCharacterSelectWidget : public UUserWidget
+      {
+         GENERATED_BODY()
+
+      protected:
+         UFUNCTION(BlueprintCallable)
+         void NextCharacter(bool bForward = true);
+
+         virtual void NativeConstruct() override;
+
+      protected:
+         UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Character)
+         int32 CurrentIndex;
+
+         UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Character)
+         int32 MaxIndex;
+
+         TWeakObjectPtr<USkeletalMeshComponent> TargetComponent;
+      
+      	UPROPERTY()
+         class UButton* PreButton;
+
+         UPROPERTY()
+         class UButton* NextButton;
+
+         UPROPERTY()
+         class UEditableTextBox* TextBox;
+
+         UPROPERTY()
+         class UButton* ConfirmButton;
+
+      private:
+         UFUNCTION()
+         void OnPrevClicked();
+
+         UFUNCTION()
+         void OnNextClicked();
+
+         UFUNCTION()
+         void OnConfirmClickecd();
+      };
+      //ABCharacterSeletWidget.cpp
+      #include "ABCharacterSelectWidget.h"
+      #include "ABCharacterSetting.h"
+      #include "ABGameInstance.h"
+      #include "EngineUtils.h"
+      #include "Animation/SkeletalMeshActor.h"
+
+      void UABCharacterSelectWidget::NextCharacter(bool bForward)
+      {
+         bForward ? CurrentIndex++ : CurrentIndex--;
+
+         if(CurrentIndex == -1) CurrentIndex = MaxIndex - 1;
+         if(CurrentIndex == MaxIndex) CurrentIndex = 0;
+
+         auto CharacterSetting = GetDefault<UABCharacterSetting>();
+         auto AssetRef = CharacterSetting->CharacterAssets[CurrentIndex];	//에셋을 불러옴
+
+         auto ABGameInstance = GetWorld()->GetGameInstance<UABGameInstance>();
+         ABCHECK(nullptr != ABGameInstance);
+         ABCHECK(TargetComponent.IsValid());
+
+         USkeletalMesh* Asset = ABGameInstance->StreamableManager.LoadSynchronous<USkeletalMesh>(AssetRef);	//생성
+         if(nullptr != Asset) TargetComponent->SetSkeletalMesh(Asset);
+      }
+
+      void UABCharacterSelectWidget::NativeConstruct()	// UI가 뷰포트에 추가되면 호출되는 함수 (초기화)
+      {
+         Super::NativeConstruct();
+
+         CurrentIndex = 0;
+         auto CharacterSetting = GetDefault<UABCharacterSetting>();
+         MaxIndex = CharacterSetting->CharacterAssets.Num();
+
+         for(TActorIterator<ASkeletalMeshActor> It(GetWorld());It;++It)
+         {
+            TargetComponent = It->GetSkeletalMeshComponent();
+            break;
+         }
+      }
+      ```
+
+      </details>
