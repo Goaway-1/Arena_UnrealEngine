@@ -49,5 +49,5 @@ private:
 	void OnNextClicked();
 
 	UFUNCTION()
-	void OnConfirmClickecd();
+	void OnConfirmClicked();
 };

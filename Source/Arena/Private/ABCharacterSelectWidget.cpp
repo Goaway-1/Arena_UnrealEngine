@@ -27,22 +27,6 @@ void UABCharacterSelectWidget::NextCharacter(bool bForward)
 
 	USkeletalMesh* Asset = ABGameInstance->StreamableManager.LoadSynchronous<USkeletalMesh>(AssetRef);	//생성
 	if(nullptr != Asset) TargetComponent->SetSkeletalMesh(Asset);
-
-	PrevButton = Cast<UButton>(GetWidgetFromName(TEXT("btnPrev")));
-	ABCHECK(nullptr != PrevButton);
-	
-	NextButton = Cast<UButton>(GetWidgetFromName(TEXT("btnNext")));
-	ABCHECK(nullptr != NextButton);
-
-	TextBox = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("edtPlayerName")));
-	ABCHECK(nullptr != TextBox);
-
-	ConfirmButton = Cast<UButton>(GetWidgetFromName(TEXT("btnConfirm")));
-	ABCHECK(nullptr != ConfirmButton);
-
-	PrevButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnPrevClicked);
-	NextButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnNextClicked);
-	ConfirmButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnConfirmClickecd);
 }
 
 void UABCharacterSelectWidget::OnPrevClicked()
@@ -55,14 +39,20 @@ void UABCharacterSelectWidget::OnNextClicked()
 	NextCharacter(true);
 }
 
-void UABCharacterSelectWidget::OnConfirmClickecd()
+void UABCharacterSelectWidget::OnConfirmClicked()
 {
 	FString CharacterName = TextBox->GetText().ToString();
-	if(CharacterName.Len() <= 0 || CharacterName.Len() > 0) return;
+	if(CharacterName.Len() <= 0 || CharacterName.Len() > 10) return;
+	
+	UABSaveGame* NewPlayerData = NewObject<UABSaveGame>();
+	NewPlayerData->PlayerName = CharacterName;
+	NewPlayerData->Level = 1;
+	NewPlayerData->Exp = 0;
+	NewPlayerData->HighScore = 0;
+	NewPlayerData->CharacterIndex = CurrentIndex;
 
 	auto ABPlayerState = GetDefault<AABPlayerState>();
-	UABSaveGame* NewPlayerData = NewObject<UABSaveGame>();
-	if (UGameplayStatics::SaveGameToSlot(NewPlayerData, ABPlayerState->SaveSlotName, 0)) UGameplayStatics::OpenLevel(GetWorld(), TEXT("GamePlay"));
+	if (UGameplayStatics::SaveGameToSlot(NewPlayerData, ABPlayerState->SaveSlotName, 0)) UGameplayStatics::OpenLevel(GetWorld(), TEXT("Gameplay"));
 	else ABLOG(Error, TEXT("SaveGame Error!"));
 }
 
@@ -79,5 +69,21 @@ void UABCharacterSelectWidget::NativeConstruct()	// UI가 뷰포트에 추가되
 		TargetComponent = It->GetSkeletalMeshComponent();
 		break;
 	}
+	
+	PrevButton = Cast<UButton>(GetWidgetFromName(TEXT("btnPrev")));
+	ABCHECK(nullptr != PrevButton);
+	
+	NextButton = Cast<UButton>(GetWidgetFromName(TEXT("btnNext")));
+	ABCHECK(nullptr != NextButton);
+
+	TextBox = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("edtPlayerName")));
+	ABCHECK(nullptr != TextBox);
+
+	ConfirmButton = Cast<UButton>(GetWidgetFromName(TEXT("btnConfirm")));
+	ABCHECK(nullptr != ConfirmButton);
+
+	PrevButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnPrevClicked);
+	NextButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnNextClicked);
+	ConfirmButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnConfirmClicked);
 }
 

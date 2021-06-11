@@ -4209,12 +4209,146 @@
       - 월드 셋팅에서 BP_SelectGameMode를 기본 게임 모드로 지정하면 양옆으로 버튼이 보인다.
 
    2. 좌우 버튼의 로직을 구현한다.
+      - <img src="Image/Select_Character.gif" height="300" title="Select_Character">
       - UserWidget을 상속받은 ABCharacterSelectwidget 클래스를 생성한다.
          - 스켈레탈 메시 액터의 목록을 가져오고 버튼을 누를 때마다 스켈레탈 메시를 변경해준다.
          - 특정 타입을 상속받은 액터의 목록은 TActorIterator<액터타입>구문을 사용해 가져온다.
       - NextCharacter 함수는 블루프린트에서 사용할 수 있도록 함수에 UFUNCTION 매크로와 BlueprintCallable 키워드를 추가한다.
       - 컴파일 후 UI_Select에셋의 부모 클래스를 ABCharacterSelectWidget으로 변경한다.
    
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABCharacterSeletWidget.h
+         class ARENA_API UABCharacterSelectWidget : public UUserWidget
+         {
+            GENERATED_BODY()
+
+         protected:
+            UFUNCTION(BlueprintCallable)
+            void NextCharacter(bool bForward = true);
+
+            virtual void NativeConstruct() override;
+
+         protected:
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Character)
+            int32 CurrentIndex;
+
+            UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Character)
+            int32 MaxIndex;
+
+            TWeakObjectPtr<USkeletalMeshComponent> TargetComponent;
+         
+            UPROPERTY()
+            class UButton* PreButton;
+
+            UPROPERTY()
+            class UButton* NextButton;
+
+            UPROPERTY()
+            class UEditableTextBox* TextBox;
+
+            UPROPERTY()
+            class UButton* ConfirmButton;
+
+         private:
+            UFUNCTION()
+            void OnPrevClicked();
+
+            UFUNCTION()
+            void OnNextClicked();
+
+            UFUNCTION()
+            void OnConfirmClickecd();
+         };
+         //ABCharacterSeletWidget.cpp
+         #include "ABCharacterSelectWidget.h"
+         #include "ABCharacterSetting.h"
+         #include "ABGameInstance.h"
+         #include "EngineUtils.h"
+         #include "Animation/SkeletalMeshActor.h"
+         #include "Components/Button.h"
+         #include "Components/EditableTextBox.h"
+         #include "ABSaveGame.h"
+         #include "ABPlayerState.h"
+
+         void UABCharacterSelectWidget::NextCharacter(bool bForward)
+         {
+            bForward ? CurrentIndex++ : CurrentIndex--;
+
+            if(CurrentIndex == -1) CurrentIndex = MaxIndex - 1;
+            if(CurrentIndex == MaxIndex) CurrentIndex = 0;
+
+            auto CharacterSetting = GetDefault<UABCharacterSetting>();
+            auto AssetRef = CharacterSetting->CharacterAssets[CurrentIndex];	//에셋을 불러옴
+
+            auto ABGameInstance = GetWorld()->GetGameInstance<UABGameInstance>();
+            ABCHECK(nullptr != ABGameInstance);
+            ABCHECK(TargetComponent.IsValid());
+
+            USkeletalMesh* Asset = ABGameInstance->StreamableManager.LoadSynchronous<USkeletalMesh>(AssetRef);	//생성
+            if(nullptr != Asset) TargetComponent->SetSkeletalMesh(Asset);
+         }
+
+         void UABCharacterSelectWidget::NativeConstruct()	// UI가 뷰포트에 추가되면 호출되는 함수 (초기화)
+         {
+            Super::NativeConstruct();
+
+            CurrentIndex = 0;
+            auto CharacterSetting = GetDefault<UABCharacterSetting>();
+            MaxIndex = CharacterSetting->CharacterAssets.Num();
+
+            for(TActorIterator<ASkeletalMeshActor> It(GetWorld());It;++It)
+            {
+               TargetComponent = It->GetSkeletalMeshComponent();
+               break;
+            }
+
+            PrevButton = Cast<UButton>(GetWidgetFromName(TEXT("btnPrev")));
+            ABCHECK(nullptr != PrevButton);
+            
+            NextButton = Cast<UButton>(GetWidgetFromName(TEXT("btnNext")));
+            ABCHECK(nullptr != NextButton);
+
+            TextBox = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("edtPlayerName")));
+            ABCHECK(nullptr != TextBox);
+
+            ConfirmButton = Cast<UButton>(GetWidgetFromName(TEXT("btnConfirm")));
+            ABCHECK(nullptr != ConfirmButton);
+
+            PrevButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnPrevClicked);
+            NextButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnNextClicked);
+            ConfirmButton->OnClicked.AddDynamic(this, &UABCharacterSelectWidget::OnConfirmClicked);
+         }
+
+         void UABCharacterSelectWidget::OnPrevClicked()
+         {
+            NextCharacter(false);
+         }
+
+         void UABCharacterSelectWidget::OnNextClicked()
+         {
+            NextCharacter(true);
+         }
+
+         void UABCharacterSelectWidget::OnConfirmClicked()
+         {
+            FString CharacterName = TextBox->GetText().ToString();
+            if(CharacterName.Len() <= 0 || CharacterName.Len() > 10) return;
+            
+            UABSaveGame* NewPlayerData = NewObject<UABSaveGame>();
+            NewPlayerData->PlayerName = CharacterName;
+            NewPlayerData->Level = 1;
+            NewPlayerData->Exp = 0;
+            NewPlayerData->HighScore = 0;
+
+            auto ABPlayerState = GetDefault<AABPlayerState>();
+            if (UGameplayStatics::SaveGameToSlot(NewPlayerData, ABPlayerState->SaveSlotName, 0)) UGameplayStatics::OpenLevel(GetWorld(), TEXT("Gameplay"));
+            else ABLOG(Error, TEXT("SaveGame Error!"));
+         }
+         ```
+
+         </details>
 
 > **<h3>Realization</h3>**
 - 게임 데이터의 저장은 SaveGame에서 관리한다. 
@@ -4222,90 +4356,63 @@
 - 언리얼 오브젝트를 생성할때 NewObject 명령을 사용하며 더 이상 사용하지 않으면 알아서 가비지 컬렉터가 탐지해 자동으로 소멸시킨다.
 - 캐릭터 선택창은 새로운 Map으로 저장
 
+## **06.11**
+> **<h3>Today Dev Story</h3>**
+- ### 타이틀 화면의 제작_선택창_2
+   - <img src="Image/Load_To_Continue.gif" height="300" title="Load_To_Continue">
+   - 현재 선택한 캐릭터가 게임 플레이에서도 동일하게 나오도록 선택한 캐릭터의 정보를 저장하고 게임플레이 레벨에서 이를 로딩하는 기능을 만든다.
+   - 생성하기 버튼을 누르면 현재 선택한 캐릭터 정보를 세이브 데이터에 저장하고 이를 읽어들이는 기능을 구현한다.
+   
       <details><summary>코드 보기</summary>
 
       ```c++
-      //ABCharacterSeletWidget.h
-      class ARENA_API UABCharacterSelectWidget : public UUserWidget
-      {
-         GENERATED_BODY()
-
-      protected:
-         UFUNCTION(BlueprintCallable)
-         void NextCharacter(bool bForward = true);
-
-         virtual void NativeConstruct() override;
-
-      protected:
-         UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Character)
-         int32 CurrentIndex;
-
-         UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Character)
-         int32 MaxIndex;
-
-         TWeakObjectPtr<USkeletalMeshComponent> TargetComponent;
-      
+      //ABSaveGame.h
+      public:
       	UPROPERTY()
-         class UButton* PreButton;
-
-         UPROPERTY()
-         class UButton* NextButton;
-
-         UPROPERTY()
-         class UEditableTextBox* TextBox;
-
-         UPROPERTY()
-         class UButton* ConfirmButton;
-
-      private:
-         UFUNCTION()
-         void OnPrevClicked();
-
-         UFUNCTION()
-         void OnNextClicked();
-
-         UFUNCTION()
-         void OnConfirmClickecd();
-      };
-      //ABCharacterSeletWidget.cpp
-      #include "ABCharacterSelectWidget.h"
-      #include "ABCharacterSetting.h"
-      #include "ABGameInstance.h"
-      #include "EngineUtils.h"
-      #include "Animation/SkeletalMeshActor.h"
-
-      void UABCharacterSelectWidget::NextCharacter(bool bForward)
+	      int32 CharacterIndex;
+      //ABSaveGame.cpp
+      CharacterIndex = 0;
+      //ABCharacterSelectWidget.cpp
+      void UABCharacterSelectWidget::OnConfirmClicked()
       {
-         bForward ? CurrentIndex++ : CurrentIndex--;
-
-         if(CurrentIndex == -1) CurrentIndex = MaxIndex - 1;
-         if(CurrentIndex == MaxIndex) CurrentIndex = 0;
-
-         auto CharacterSetting = GetDefault<UABCharacterSetting>();
-         auto AssetRef = CharacterSetting->CharacterAssets[CurrentIndex];	//에셋을 불러옴
-
-         auto ABGameInstance = GetWorld()->GetGameInstance<UABGameInstance>();
-         ABCHECK(nullptr != ABGameInstance);
-         ABCHECK(TargetComponent.IsValid());
-
-         USkeletalMesh* Asset = ABGameInstance->StreamableManager.LoadSynchronous<USkeletalMesh>(AssetRef);	//생성
-         if(nullptr != Asset) TargetComponent->SetSkeletalMesh(Asset);
+         ...
+         NewPlayerData->CharacterIndex = CurrentIndex;
+         ...
       }
-
-      void UABCharacterSelectWidget::NativeConstruct()	// UI가 뷰포트에 추가되면 호출되는 함수 (초기화)
+      //ABPlayerState.h
+      public:
+      	int32 GetCharacterIndex() const;
+      protected:
+      	UPROPERTY(Transient)
+         int32 CharacterIndex;
+      //ABPlayerState.cpp
+      AABPlayerState::AABPlayerState()
       {
-         Super::NativeConstruct();
-
-         CurrentIndex = 0;
-         auto CharacterSetting = GetDefault<UABCharacterSetting>();
-         MaxIndex = CharacterSetting->CharacterAssets.Num();
-
-         for(TActorIterator<ASkeletalMeshActor> It(GetWorld());It;++It)
-         {
-            TargetComponent = It->GetSkeletalMeshComponent();
-            break;
-         }
+         ...
+         CharacterIndex = 0;
       }
+      int32 AABPlayerState::GetCharacterIndex() const
+      {
+         return CharacterIndex;
+      }
+      void AABPlayerState::InitPlayerData()	//초기 생성
+      {
+         ...
+         CharacterIndex = ABSaveGame->CharacterIndex;
+         SavePlayerData();
+      }
+      void AABPlayerState::SavePlayerData()
+      {
+         ...
+         NewPlayerData->CharacterIndex = CharacterIndex;
+
+         if(!UGameplayStatics::SaveGameToSlot(NewPlayerData, SaveSlotName,0)) ABLOG(Error, TEXT("SaveGame Error!"));
+      }
+      //ABCharacter.cpp
+
       ```
 
       </details>
+
+> **<h3>Realization</h3>**
+- null

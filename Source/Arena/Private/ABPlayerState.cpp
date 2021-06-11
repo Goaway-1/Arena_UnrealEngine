@@ -12,6 +12,7 @@ AABPlayerState::AABPlayerState()
 	GameHighScore = 0;
 	Exp = 0;
 	SaveSlotName = TEXT("Player1");
+	CharacterIndex = 0;
 }
 
 int32 AABPlayerState::GetGameScore() const
@@ -29,6 +30,11 @@ int32 AABPlayerState::GetGameHighScore() const
 	return GameHighScore;
 }
 
+int32 AABPlayerState::GetCharacterIndex() const
+{
+	return CharacterIndex;
+}
+
 void AABPlayerState::InitPlayerData()	//초기 생성
 {
 	auto ABSaveGame = Cast<UABSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName,0));
@@ -40,6 +46,7 @@ void AABPlayerState::InitPlayerData()	//초기 생성
 	GameScore = 0;
 	GameHighScore = ABSaveGame->HighScore;
 	Exp = ABSaveGame->Exp;
+	CharacterIndex = ABSaveGame->CharacterIndex;
 	SavePlayerData();
 }
 
@@ -50,6 +57,7 @@ void AABPlayerState::SavePlayerData()
 	NewPlayerData->Level = CharacterLevel;
 	NewPlayerData->Exp = Exp;
 	NewPlayerData->HighScore = GameHighScore;
+	NewPlayerData->CharacterIndex = CharacterIndex;
 
 	if(!UGameplayStatics::SaveGameToSlot(NewPlayerData, SaveSlotName,0)) ABLOG(Error, TEXT("SaveGame Error!"));
 }

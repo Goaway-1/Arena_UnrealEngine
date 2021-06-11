@@ -131,7 +131,9 @@ void AABCharacter::BeginPlay()
 	
 	if(bIsPlayer)	//플레이어인 경우
     {
-    	AssetIndex = 4;	//생성에셋
+    	auto ABPlayerState = Cast<AABPlayerState>(GetPlayerState());
+		ABCHECK(nullptr != ABPlayerState);
+		AssetIndex = ABPlayerState->GetCharacterIndex();
     }
     else	//Ai인 경우
     {
