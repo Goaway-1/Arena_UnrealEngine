@@ -4409,10 +4409,413 @@
          if(!UGameplayStatics::SaveGameToSlot(NewPlayerData, SaveSlotName,0)) ABLOG(Error, TEXT("SaveGame Error!"));
       }
       //ABCharacter.cpp
-
+      void AABCharacter::BeginPlay()
+      {
+         ...
+         auto DefaultSetting = GetDefault<UABCharacterSetting>();
+         
+         if(bIsPlayer)	//플레이어인 경우
+         {
+            auto ABPlayerState = Cast<AABPlayerState>(GetPlayerState());
+            ABCHECK(nullptr != ABPlayerState);
+            AssetIndex = ABPlayerState->GetCharacterIndex();
+         }
+         ...
+      }
       ```
 
       </details>
 
 > **<h3>Realization</h3>**
 - null
+
+## **06.12**
+> **<h3>Today Dev Story</h3>**
+- ### 게임의 중지화면
+   1. 위젯의 기본 뼈대 만들기
+      - 버튼은 기능별로 동일한 이름을 가지도록 설계
+         - btnResume, btnReturnToTitle, btnRetryGame
+         - 프로젝트 세팅 > 입력에서 GamePause라는 이름의 액션 매핑을 M키를 사용해 게임플레이의 종료를 구현한다.
+         - 플레이어 컨트롤러에서 해당 키를 인식시키는 코드를 추가한다.
+      - 또한 UI가 공용으로 사용할 UserWidget을 상속받은 기본 클래스(ABGameplayWidget)를 만들고 이를 UI_Menu 에셋에서의 부모 클래스가 된다.
+         - UI를 초기화하는 시점에 발생하는 NativeConstruct함수에서 이름으로 버튼을 찾고 존재하면 바인딩한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABPlayerController.h
+         protected:
+            virtual void SetupInputComponent() override;
+         private:
+            void OnGamePause();
+         //ABPlayerController.cpp
+         void AABPlayerController::SetupInputComponent()
+         {
+            Super::SetupInputComponent();
+            InputComponent->BindAction(TEXT("GamePause"),EInputEvent::IE_Pressed, this, &AABPlayerController::OnGamePause);	//눌리는지 확인
+         }
+
+         void AABPlayerController::OnGamePause() { }
+         //ABGameplayWidget.h
+         class ARENA_API UABGameplayWidget : public UUserWidget
+         {
+            GENERATED_BODY()
+
+         protected:
+            virtual void NativeConstruct() override; //UI위젯이 초기화되는 시점 -> 이름으로 버튼 찾을거
+
+            UFUNCTION()
+            void OnResumeClicked();
+
+            UFUNCTION()
+            void OnReturnToTitleClicked();
+
+            UFUNCTION()
+            void OnRetryGameClicked();
+
+            UPROPERTY()
+            class UButton* ResumeButton;
+
+            UPROPERTY()
+            class UButton* ReturnToTitleButton;
+            
+            UPROPERTY()
+            class UButton* RetryGameButton;
+         };
+         //ABGameplayWidget.cpp
+         #include "ABGameplayWidget.h"
+         #include "Components/Button.h"
+
+         void UABGameplayWidget::NativeConstruct()
+         {
+            Super::NativeConstruct();
+
+            ResumeButton = Cast<UButton>(GetWidgetFromName(TEXT("btnResume")));	//찾아라
+            if(nullptr != ResumeButton) ResumeButton->OnClicked.AddDynamic(this, &UABGameplayWidget::OnResumeClicked); //바인딩
+
+            ReturnToTitleButton = Cast<UButton>(GetWidgetFromName(TEXT("btnReturnToTitle")));
+            if(nullptr != ReturnToTitleButton) ReturnToTitleButton->OnClicked.AddDynamic(this, &UABGameplayWidget::OnReturnToTitleClicked);
+
+            RetryGameButton = Cast<UButton>(GetWidgetFromName(TEXT("btnRetryGame")));
+            if(nullptr != RetryGameButton) RetryGameButton->OnClicked.AddDynamic(this, &UABGameplayWidget::OnRetryGameClicked);
+         }
+
+         void UABGameplayWidget::OnResumeClicked() { }
+
+         void UABGameplayWidget::OnReturnToTitleClicked() { }
+
+         void UABGameplayWidget::OnRetryGameClicked() { }
+         ```
+
+         </details>
+   
+   2. M 버튼을 누르면 메뉴 UI가 나타나도록 추가한다.
+      - <img src="Image/Pause_Menu.gif" height="300" title="Pause_Menu">
+      - 게임 중지, 마우스커서 출력, 입력이 UI에만 전달되도록 제어해야한다.
+         - PlayerController의 SetPause 함수를 사용하면 플레이를 일시 중지할 수 있다.
+         - 마우스 커서도 bShowMouseCursor 속성을 true로 하면 보여지고 SetInputMode에 FinputModeUIOnly 클래스를 넣어 UI에만 입력되도록한다.
+         - RemoveFromParent함수를 통해 뷰포트의 자신을 제거하고 GetOwningPlayer함수를 통해 자신을 관리하는 플레이어 컨트롤러의 정보를 가져온다. 이를 사용해 게임의 진행을 원래되로 되돌려놓는다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //PlayerController.h
+         public:
+            void ChangeInputMode(bool bGameMode = true);
+         protected:
+            UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category=UI)
+            TSubclassOf<class UABGameplayWidget> MenuWidgetClass;
+         private:
+            UPROPERTY()
+            class UABGameplayWidget* MenuWidget;
+
+            FInputModeGameOnly GameInputMode;
+            FInputModeUIOnly UIInputMode;
+         //PlayerController.cpp
+         #include "ABGameplayWidget.h"
+         AABPlayerController::AABPlayerController()
+         {
+            ...
+            static ConstructorHelpers::FClassFinder<UABGameplayWidget>
+            UI_MENU_C(TEXT("/Game/Book/UI/UI_Menu.UI_Menu_C"));
+            if(UI_MENU_C.Succeeded()) MenuWidgetClass = UI_MENU_C.Class;
+         }
+         void AABPlayerController::BeginPlay()
+         {
+            Super::BeginPlay();
+            ChangeInputMode(true);	//입력모드를 싸움
+            ...
+         }
+         ...
+         void AABPlayerController::ChangeInputMode(bool bGameMode)
+         {
+            if(bGameMode)	//게임에 입력
+            {
+               SetInputMode(GameInputMode);	
+               bShowMouseCursor = false;
+            }
+            else
+            {
+               SetInputMode(UIInputMode);
+               bShowMouseCursor = true;	//마우스 커서 띄움
+            }
+         }
+
+         void AABPlayerController::OnGamePause()
+         {
+            MenuWidget = CreateWidget<UABGameplayWidget>(this, MenuWidgetClass);	//만들어
+            ABCHECK(nullptr != MenuWidget);
+            MenuWidget->AddToViewport(3); //화면에 추가
+            
+            SetPause(true);
+            ChangeInputMode(false);	//입력모드 바꿈
+         }
+         //ABGameplayWidget.cpp
+         #include "ABPlayerController.h"
+         ...
+         void UABGameplayWidget::OnResumeClicked()
+         {
+            auto ABPlayerController = Cast<AABPlayerController>(GetOwningPlayer());
+            ABCHECK(nullptr != ABPlayerController);
+
+            //UI제거하고 이어하기
+            RemoveFromParent();	
+            ABPlayerController->ChangeInputMode(true);
+            ABPlayerController->SetPause(false);
+         }
+
+         void UABGameplayWidget::OnReturnToTitleClicked()
+         {
+            UGameplayStatics::OpenLevel(GetWorld(),TEXT("Title"));
+         }
+         ```
+
+         </details>
+
+- ### 게임의 결과화면
+- <img src="Image/Game_End.gif" height="300" title="Game_End">
+
+   1. 결과화면 UI인 ABGameplayeWidget을 상속받은 ABGameplayResultWidget 클래스를 만든다.
+      - 결과화면에는 다시시작하는 버튼과 결과를 보여주는 텍스트 점수를 보여주는 3개의 위젯컨트롤리 있다.
+      - UI_Result 에셋의 부모 클래스로 설정하고 이 UI는 게임 종료시 한번만 띄워지는 로직을 구현한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABGameplayResultWidget.h
+         protected:
+            void NativeConstruct() override;
+         //ABGameplayResultWidget.cpp
+         #include "Components/TextBlock.h"
+         //button은 ABGameplayResultWidget에서 이미 상속받았음
+
+         void UABGameplayResultWidget::NativeConstruct()
+         {
+            Super::NativeConstruct();
+
+            auto Result = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtResult")));
+            ABCHECK(nullptr != Result);
+
+            auto TotalScore = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtTotalScore")));
+            ABCHECK(nullptr != TotalScore);
+         }
+         //ABPlayerController.h
+         public:
+            void ShowResultUI();
+         protected:
+            UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category=UI)
+            TSubclassOf<class UABGameplayResultWidget> ReultWidgetClass;
+         private:
+            UPROPERTY()
+            class UABGameplayResultWidget* ReultWidget;
+         //ABPlayerController.cpp
+         AABPlayerController::AABPlayerController()
+         {
+            ...
+            static ConstructorHelpers::FClassFinder<UABGameplayResultWidget>
+            UI_RESULT_C(TEXT("/Game/Book/UI/UI_Result.UI_Result_C"));
+            if(UI_RESULT_C.Succeeded()) ResultWidgetClass = UI_RESULT_C.Class;
+         }
+         ...
+         void AABPlayerController::BeginPlay()
+         {
+            ...
+            ResultWidget = CreateWidget<UABGameplayResultWidget>(this, ResultWidgetClass);
+            ABCHECK(nullptr != ResultWidget);
+            ...
+         }
+         void AABPlayerController::ShowResultUI()
+         {
+            ResultWidget->AddToViewport();
+            ChangeInputMode(false);
+         }
+         ```
+
+         </details>
+
+   2. 게임 플레이가 종료되는 시점을 지정한다.
+      - 플레이어가 죽었을 때와 목표를 달성했을때 종료되며 일단 테스트를 위해 두개의 섹션을 COMPLETE 스테이트로 만들면 목표를 달성한 것으로 한다.
+         - 목표의 달성 여부는 게임의 정보임으로 GameState의 bGameCleared라는 속성을 추가하고 GameMode에서 목표가 달성되면 모든 Pawn을 멈추고 bGameCleared를 true로 설정한다.
+         - 목표를 달성하거나 죽으면 플레이어 컨트롤러의 ShowResultUI 함수를 호출한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABGameState.h
+         public:
+            void SetGameCleared();
+            bool IsGameCleared() const;
+         private:
+            UPROPERTY(Transient)
+            bool bGameCleared;
+         //ABGameState.cpp
+         AABPlayerState::AABPlayerState()
+         {
+            ...
+            bGameCleared = false;
+         }
+         void AABPlayerState::SetGameCleared()
+         {
+            bGameCleared = true;
+         }
+
+         bool AABPlayerState::IsGameCleared() const
+         {
+            return bGameCleared;
+         }
+
+         //ABGameMode.h
+         private:
+            UPROPERTY()
+            int32 ScoreToClear;
+         //ABGameMode.cpp
+         AABGameMode::AABGameMode()
+         {
+            ...
+            ScoreToClear = 2;
+         }
+         void AABGameMode::AddScore(AABPlayerController* ScoredPlayer)
+         {
+            ...
+            
+            if(GetScore() >= ScoreToClear)	//목적의 달성 종료
+            {
+               ABGameState->SetGameCleared();
+               
+               for (FConstPawnIterator It = GetWorld()->GetPawnIterator();It;++It) (*It)->TurnOff();
+               
+               for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator();It;++It)	//UI를 호출한
+               {
+                  const auto ABPlayerController = Cast<AABPlayerController>(It->Get());
+                  if(nullptr != ABPlayerController) ABPlayerController->ShowResultUI();	
+               }
+            }
+         }
+         //ABCharactet.cpp
+         void AABCharacter::SetCharacterState(ECharacterState NewState)
+         {
+            ...
+            case ECharacterState::DEAD:
+               ...
+               GetWorld()->GetTimerManager().SetTimer(DeadTimerHandle, FTimerDelegate::CreateLambda([this]()->void
+               {
+                  if(bIsPlayer) ABPlayerController->ShowResultUI();
+                  else Destroy();
+               }),DeadTimer, false);
+               
+               break;
+            }
+         }
+         ```
+
+         </details>
+
+   3. UI 위젯이 게임스테이트의 정보를 읽어들일 수 있도록 바인딩을 설정
+      - UI 위젯의 NativeConstruct 함수는 AddToViewport 함수가 외부에서 호출될 때 UI 위젯이 초기화 되며 호출된다.
+      - ShowResultUI 함수에서 AddToViewport 함수전에 바인딩할 수 있도록하고 ABGameplaywidget 클래스에서 구현못한 btnRetryGame 버튼의 기능을 구현한다.
+
+         <details><summary>코드 보기</summary>
+
+         ```c++
+         //ABGameplayResultWidget.h
+         public:
+            void BindGameState(class AABGameState* GameState);
+         ...
+         private:
+            TWeakObjectPtr<class AABGameState> CurrentGameState;
+         //ABGameplayResultWidget.cpp
+         void UABGameplayResultWidget::BindGameState(AABGameState* GameState)
+         {
+            ABCHECK(nullptr != GameState);
+            CurrentGameState = GameState;	//상태
+         }
+
+         void UABGameplayResultWidget::NativeConstruct()
+         {
+            Super::NativeConstruct();
+
+            ABCHECK(CurrentGameState.IsValid());
+            
+            auto Result = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtResult")));
+            ABCHECK(nullptr != Result);
+            Result->SetText(FText::FromString(CurrentGameState->IsGameCleared() ? TEXT("Mission Complete") : TEXT("Mission Failed")));
+
+            auto TotalScore = Cast<UTextBlock>(GetWidgetFromName(TEXT("txtTotalScore")));
+            ABCHECK(nullptr != TotalScore);
+            TotalScore->SetText(FText::FromString(FString::FromInt(CurrentGameState->GetTotalGameScore())));
+         }
+         //ABGamePlayWidget.cpp
+         void UABGameplayWidget::OnRetryGameClicked()
+         {
+            auto ABPlayerController = Cast<AABPlayerController>(GetOwningPlayer());
+            ABCHECK(nullptr != ABPlayerController);
+            ABPlayerController->RestartLevel();
+         }
+         //ABPlayerController.cpp
+         #include "ABGameState.h"
+         void AABPlayerController::ShowResultUI()
+         {
+            auto ABGameState = Cast<AABGameState>(UGameplayStatics::GetGameState(this));
+            ABCHECK(nullptr != ABGameState);
+            ResultWidget->BindGameState(ABGameState);
+            ...
+         }
+         ```
+
+         </details>
+
+- ### 공격 판정을 로그로 저장하고 시각화하여 표현
+   - <img src="Image/VisualLogger.gif" height="300" title="VisualLogger">
+   - 비주얼 로거를 사용하면 진행 상황을 시각적으로 활용할 수 있어 문제점 파악에 효과적이다.
+   - 창 > 개발자 툴 > 비주얼 로거에서 확인 가능하며 UE_VLOG로 시작하는 매크로를 사용해 생성가능하다.
+   - 이전 디버그 드로잉과 유사하기만 비주얼 로거는 결과를 차후에 확인할 수 있다.
+
+      <details><summary>코드 보기</summary>
+
+      ```c++
+      //ABCharacter.cpp
+      #include "VisualLogger/VisualLogger.h"
+      ...
+      void AABCharacter::AttackCheck()
+      {
+         ...
+      #if ENABLE_DRAW_DEBUG
+         ...
+         DrawDebugCapsule(GetWorld(),Center,HalfHeight,AttackRadius,CapsuleRot,DrawColor,false,DebugLifeTime);
+
+         //비주얼 로거
+         UE_VLOG_LOCATION(this, Arena, Verbose, GetActorLocation(), 50.0f, FColor::Blue, TEXT("Attack Position"));
+         UE_VLOG_CAPSULE(this, Arena, Verbose, GetActorLocation() - GetActorForwardVector() * AttackRadius, HalfHeight, AttackRadius, CapsuleRot, DrawColor, TEXT("Attak Arena"));
+      }
+      ```
+
+      </details>
+
+- ### 패키징 후 Fatal Error 발생
+   1. LogPlayerController: Error: InputMode:UIOnly - Attempting to focus Non-Focusable widget SObjectWidget [Widget.cpp(799)]!
+
+> **<h3>Realization</h3>**
+- 게임 정지시 게임 중지, 마우스커서 출력, 입력이 UI에만 전달되도록 제어해야한다. 모두 PlayerController에서 제어한다.
+   - PlayerController의 SetPause 함수를 사용하면 플레이를 일시 중지할 수 있다.
+   - 마우스 커서도 bShowMouseCursor 속성을 true로 하면 보여지고 SetInputMode에 FinputModeUIOnly 클래스를 넣어 UI에만 입력되도록한다.
+- 멀티플레이에서 캐릭터의 초기화는 PossessedBy 에서 구현이 올바르다.

@@ -15,6 +15,7 @@
 #include "ABPlayerState.h"
 #include "ABHUDWidget.h"
 #include "ABGameMode.h"
+#include "VisualLogger/VisualLogger.h"
 
 // Sets default values
 AABCharacter::AABCharacter()
@@ -83,16 +84,6 @@ AABCharacter::AABCharacter()
 
 	AIControllerClass = AABAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
-
-	// 준비된 에셋들을 출력하는 과정
-	// auto DefaultSetting = GetDefault<UABCharacterSetting>();
-	// if(DefaultSetting->CharacterAssets.Num() > 0)
-	// {
-	// 	for (auto CharacterAsset : DefaultSetting->CharacterAssets)
-	// 	{
-	// 		ABLOG(Warning, TEXT("Character Asset : %s"),*CharacterAsset.ToString());
-	// 	}
-	// }
 
 	//스테이트에 따른 설정
 	AssetIndex = 4;
@@ -212,7 +203,7 @@ void AABCharacter::SetCharacterState(ECharacterState NewState)
 
 		GetWorld()->GetTimerManager().SetTimer(DeadTimerHandle, FTimerDelegate::CreateLambda([this]()->void
 		{
-			if(bIsPlayer) ABPlayerController->RestartLevel();
+			if(bIsPlayer) ABPlayerController->ShowResultUI();
 			else Destroy();
 		}),DeadTimer, false);
 		
@@ -520,6 +511,10 @@ void AABCharacter::AttackCheck()
 	float DebugLifeTime = 5.0f;
 
 	DrawDebugCapsule(GetWorld(),Center,HalfHeight,AttackRadius,CapsuleRot,DrawColor,false,DebugLifeTime);
+
+	//비주얼 로거
+	//UE_VLOG_LOCATION(this, Arena, Verbose, GetActorLocation(), 50.0f, FColor::Blue, TEXT("Attack Position"));
+	//UE_VLOG_CAPSULE(this, Arena, Verbose, GetActorLocation() - GetActorForwardVector() * AttackRadius, HalfHeight, AttackRadius, CapsuleRot, DrawColor, TEXT("Attak Arena"));
 
 #endif
 

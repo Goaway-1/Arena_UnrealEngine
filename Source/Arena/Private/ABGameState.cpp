@@ -6,11 +6,22 @@
 AABGameState::AABGameState()
 {
 	TotalGameScore = 0;
+	bGameCleared = false;
 }
 
 int32 AABGameState::GetTotalGameScore() const
 {
 	return TotalGameScore;
+}
+
+void AABGameState::SetGameCleared()
+{
+	bGameCleared = true;
+}
+
+bool AABGameState::IsGameCleared() const
+{
+	return bGameCleared;
 }
 
 void AABGameState::AddGameScore()

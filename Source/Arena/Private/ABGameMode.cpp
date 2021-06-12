@@ -14,6 +14,8 @@ AABGameMode::AABGameMode()
 	PlayerControllerClass = AABPlayerController::StaticClass();
 	PlayerStateClass = AABPlayerState::StaticClass();
 	GameStateClass = AABGameState::StaticClass();
+
+	ScoreToClear = 10;
 }
 
 void AABGameMode::PostLogin(APlayerController* NewPlayer)
@@ -43,6 +45,19 @@ void AABGameMode::AddScore(AABPlayerController* ScoredPlayer)
 		}
 	}
 	ABGameState->AddGameScore();
+	
+	if(GetScore() >= ScoreToClear)	//목적의 달성 종료
+	{
+		ABGameState->SetGameCleared();
+		
+		for (FConstPawnIterator It = GetWorld()->GetPawnIterator();It;++It) (*It)->TurnOff();
+		
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator();It;++It)	//UI를 호출한
+		{
+			const auto ABPlayerController = Cast<AABPlayerController>(It->Get());
+			if(nullptr != ABPlayerController) ABPlayerController->ShowResultUI();	
+		}
+	}
 }
 int32 AABGameMode::GetScore() const
 {
