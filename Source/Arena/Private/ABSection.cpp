@@ -12,8 +12,8 @@ AABSection::AABSection()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
-
-
+    
+    //Center
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MESH"));
 	RootComponent = Mesh;
 
@@ -36,6 +36,7 @@ AABSection::AABSection()
 	Trigger->SetCollisionProfileName(TEXT("ABTrigger"));
 	Trigger->OnComponentBeginOverlap.AddDynamic(this, & AABSection::OnTriggerBeginOverlap);
 	
+	//Gate
 	FString GateAssetPath = TEXT("/Game/Book/StaticMesh/SM_GATE.SM_GATE");
 	static ConstructorHelpers::FObjectFinder<UStaticMesh>
 	SM_GATE(*GateAssetPath);
@@ -71,7 +72,6 @@ AABSection::AABSection()
 	ItemBoxSpawnTime = 5.0f;
 }
 
-// Called when the game starts or when spawned
 void AABSection::BeginPlay()
 {
 	Super::BeginPlay();
@@ -114,7 +114,6 @@ void AABSection::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	SetState(bNoBattle ? EsectionState::COMPLETE : EsectionState::READY);
 }
-
 
 void AABSection::OperateGates(bool bOpen)
 {
